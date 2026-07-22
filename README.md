@@ -6,8 +6,13 @@ TSS is a SAP S/4HANA + Student Lifecycle Management system fronted by SAPUI5/Fio
 
 ## Status
 
-Early prototype (v0.2). A Manifest V3 extension that opens a full-page UI and
-searches the TSS course catalog. Reads only.
+Early prototype. A Manifest V3 extension that opens a full-page UI and searches
+the TSS course catalog, WebReg-style: each course expands to show its sections
+(section ID, meeting days, times, instructor), lazy-loaded on click. Reads only.
+
+Section **type (LE/DI/LA), seats, and building/room** are not wired yet — those
+depend on `YUCSD_CON_MODULE_DATA`/`_BLDG`/`_LOC` fields that still need verifying
+against the live service.
 
 - [`extension/`](extension/) — the unpacked MV3 extension.
 - [`docs/tss-client-spec.md`](docs/tss-client-spec.md) — system architecture, auth model, full OData endpoint/entity catalog, client design, and read-vs-write feasibility.

@@ -1,24 +1,31 @@
 const SERVICE =
   "https://tss.ucsd.edu/sap/opu/odata4/sap/yucsd_con_module_sb/srvd/sap/yucsd_con_module_servicedef/0001";
-const ENTITY = "YUCSD_CON_MODULE";
-const SELECT =
-  "CourseAbbr,CourseTitle,DepartmentAbbr,DepartmentText,CreditsDisplay,AcademicLevel,ModuleID";
+const COURSE_ENTITY = "YUCSD_CON_MODULE";
+const SCHED_ENTITY = "YUCSD_CON_MODULE_SCHED";
+const INSTR_ENTITY = "YUCSD_CON_MODULE_INSTR";
+const COURSE_SELECT =
+  "CourseAbbr,CourseTitle,DepartmentAbbr,DepartmentText,CreditsDisplay,AcademicLevel,ModuleID,AcademicYear,AcademicPeriod";
 const PAGE_SIZE = 50;
 
 class SessionExpiredError extends Error {}
 class TssUnavailableError extends Error {}
 
-function buildUrl({ query, year, term }) {
+function buildCourseUrl({ query, year, term }) {
   const filter = `AcYearText eq '${year}' and AcademicPeriodText eq '${term}'`;
   const params = [
     "sap-client=500",
-    `$select=${SELECT}`,
+    `$select=${COURSE_SELECT}`,
     `$filter=${encodeURIComponent(filter)}`,
     `$top=${PAGE_SIZE}`,
   ];
   const q = query.trim();
   if (q) params.push(`$search=${encodeURIComponent(`"${q}"`)}`);
-  return `${SERVICE}/${ENTITY}?${params.join("&")}`;
+  return `${SERVICE}/${COURSE_ENTITY}?${params.join("&")}`;
+}
+
+function buildByModuleUrl(entity, moduleId) {
+  const filter = encodeURIComponent(`ModuleID eq '${moduleId}'`);
+  return `${SERVICE}/${entity}?sap-client=500&$filter=${filter}&$top=200`;
 }
 
 function isLoginRedirect(body) {
@@ -39,17 +46,49 @@ function sendToBackground(message) {
   });
 }
 
-async function searchCourses(opts) {
-  const { status, body } = await sendToBackground({
-    type: "tssFetch",
-    url: buildUrl(opts),
-  });
+async function fetchOData(url) {
+  const { status, body } = await sendToBackground({ type: "tssFetch", url });
   if (status === 401 || isLoginRedirect(body || "")) throw new SessionExpiredError();
   if (status === 0) throw new TssUnavailableError(body || "no network response");
   if (status >= 500) throw new TssUnavailableError(`TSS returned ${status}`);
   if (status < 200 || status >= 300) throw new Error(`TSS returned ${status}`);
-  const data = JSON.parse(body);
-  return { rows: data.value ?? [] };
+  return JSON.parse(body).value ?? [];
+}
+
+function formatTime(value) {
+  if (!value) return "";
+  const [h, m] = value.split(":");
+  const hour = Number(h);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${m} ${suffix}`;
+}
+
+function groupSections(schedRows, instructorNames) {
+  const bySection = new Map();
+  for (const row of schedRows) {
+    const id = row.SectionId || "—";
+    if (!bySection.has(id)) bySection.set(id, { sectionId: id, meetings: [] });
+    bySection.get(id).meetings.push({
+      days: row.DoWText || "",
+      time:
+        row.BeginTime && row.EndTime
+          ? `${formatTime(row.BeginTime)}–${formatTime(row.EndTime)}`
+          : "TBA",
+    });
+  }
+  const sections = [...bySection.values()];
+  const instructors = [...new Set(instructorNames)].join(", ");
+  for (const s of sections) s.instructors = instructors;
+  return sections;
+}
+
+async function loadSections(moduleId) {
+  const [schedRows, instrRows] = await Promise.all([
+    fetchOData(buildByModuleUrl(SCHED_ENTITY, moduleId)),
+    fetchOData(buildByModuleUrl(INSTR_ENTITY, moduleId)),
+  ]);
+  return groupSections(schedRows, instrRows.map((r) => r.InstructorName).filter(Boolean));
 }
 
 const els = {
@@ -58,8 +97,7 @@ const els = {
   year: document.getElementById("year"),
   term: document.getElementById("term"),
   status: document.getElementById("status"),
-  table: document.getElementById("results"),
-  tbody: document.querySelector("#results tbody"),
+  results: document.getElementById("results"),
   banner: document.getElementById("login-banner"),
   loginBtn: document.getElementById("login-btn"),
 };
@@ -72,44 +110,106 @@ function showBanner(show) {
   els.banner.hidden = !show;
 }
 
-function renderRows(rows) {
-  els.tbody.replaceChildren();
-  for (const r of rows) {
-    const tr = document.createElement("tr");
-    const cells = [
-      r.CourseAbbr,
-      r.CourseTitle,
-      r.DepartmentAbbr,
-      r.CreditsDisplay,
-      r.AcademicLevel,
-    ];
-    for (const value of cells) {
-      const td = document.createElement("td");
-      td.textContent = value ?? "";
-      tr.appendChild(td);
-    }
-    els.tbody.appendChild(tr);
+function renderSections(host, sections) {
+  host.replaceChildren();
+  if (sections.length === 0) {
+    host.textContent = "No sections listed.";
+    return;
   }
-  els.table.hidden = rows.length === 0;
+  const table = document.createElement("table");
+  table.className = "sections";
+  table.innerHTML =
+    "<thead><tr><th>Section</th><th>Days</th><th>Time</th><th>Instructor</th></tr></thead>";
+  const tbody = document.createElement("tbody");
+  for (const s of sections) {
+    const meetings = s.meetings.length ? s.meetings : [{ days: "", time: "TBA" }];
+    meetings.forEach((meeting, i) => {
+      const tr = document.createElement("tr");
+      const cells = [
+        i === 0 ? s.sectionId : "",
+        meeting.days,
+        meeting.time,
+        i === 0 ? s.instructors : "",
+      ];
+      for (const value of cells) {
+        const td = document.createElement("td");
+        td.textContent = value;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+  }
+  table.appendChild(tbody);
+  host.appendChild(table);
+}
+
+function renderCourses(courses) {
+  els.results.replaceChildren();
+  for (const course of courses) {
+    const block = document.createElement("section");
+    block.className = "course";
+
+    const headerBtn = document.createElement("button");
+    headerBtn.className = "course-header";
+    headerBtn.type = "button";
+    headerBtn.innerHTML = `
+      <span class="caret">▸</span>
+      <span class="course-code">${course.CourseAbbr ?? ""}</span>
+      <span class="course-title">${course.CourseTitle ?? ""}</span>
+      <span class="course-units">${course.CreditsDisplay ?? ""} units</span>`;
+
+    const detail = document.createElement("div");
+    detail.className = "course-detail";
+    detail.hidden = true;
+
+    let loaded = false;
+    headerBtn.addEventListener("click", async () => {
+      const opening = detail.hidden;
+      detail.hidden = !opening;
+      block.classList.toggle("open", opening);
+      if (!opening || loaded) return;
+      detail.textContent = "Loading sections…";
+      try {
+        const sections = await loadSections(course.ModuleID);
+        renderSections(detail, sections);
+        loaded = true;
+      } catch (err) {
+        if (err instanceof SessionExpiredError) {
+          detail.textContent = "";
+          showBanner(true);
+        } else if (err instanceof TssUnavailableError) {
+          detail.textContent = `TSS isn't responding (${err.message}).`;
+        } else {
+          detail.textContent = `Couldn't load sections: ${err.message}`;
+        }
+      }
+    });
+
+    block.appendChild(headerBtn);
+    block.appendChild(detail);
+    els.results.appendChild(block);
+  }
 }
 
 async function runSearch() {
   showBanner(false);
   setStatus("Searching…");
-  els.table.hidden = true;
+  els.results.replaceChildren();
   try {
-    const { rows } = await searchCourses({
-      query: els.query.value,
-      year: els.year.value,
-      term: els.term.value,
-    });
-    renderRows(rows);
-    if (rows.length === 0) {
+    const courses = await fetchOData(
+      buildCourseUrl({
+        query: els.query.value,
+        year: els.year.value,
+        term: els.term.value,
+      }),
+    );
+    renderCourses(courses);
+    if (courses.length === 0) {
       setStatus("No courses found.");
-    } else if (rows.length === PAGE_SIZE) {
+    } else if (courses.length === PAGE_SIZE) {
       setStatus(`Showing the first ${PAGE_SIZE} — refine your search to narrow it down.`);
     } else {
-      setStatus(`Showing ${rows.length} course${rows.length === 1 ? "" : "s"}.`);
+      setStatus(`Showing ${courses.length} course${courses.length === 1 ? "" : "s"}.`);
     }
   } catch (err) {
     if (err instanceof SessionExpiredError) {
