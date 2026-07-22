@@ -39,10 +39,10 @@ async function tssFetch(url) {
   const [injection] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     world: "MAIN",
-    args: [url, FETCH_TIMEOUT_MS],
+    args: [String(url), FETCH_TIMEOUT_MS],
     func: async (target, timeoutMs) => {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const timer = setTimeout(() => controller.abort(), timeoutMs || 30000);
       try {
         const res = await fetch(target, {
           headers: { Accept: "application/json", "sap-passport": "better-tss" },
