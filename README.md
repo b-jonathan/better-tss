@@ -33,10 +33,11 @@ tab and runs the OData `fetch` **inside that tab's own page context** via
 cookie attaches natively, exactly as the real TSS UI does it. Results are relayed back
 to the app page via `chrome.runtime` messaging.
 
-SAP enforces CSRF protection on browser-originated requests (it returns `403` with
-`x-csrf-token: Required` otherwise), so each call first does a `GET <service>/` with
-`X-CSRF-Token: Fetch`, reads the token from the response header, and sends it on the
-data request — the same handshake the real UI performs.
+TSS's gateway rejects any request that lacks a non-empty **`sap-passport`** header
+(the SAP end-to-end tracing header the UI5 framework attaches to every call) with a
+generic `403 "Access denied"`. A plain `fetch` omits it, so every request 403s. We
+send a non-empty `sap-passport` header to clear the gate — the gateway only checks
+presence, not the value. GET reads need no CSRF token (only writes will).
 
 Responses are classified honestly:
 

@@ -43,7 +43,6 @@ async function searchCourses(opts) {
   const { status, body } = await sendToBackground({
     type: "tssFetch",
     url: buildUrl(opts),
-    csrfUrl: `${SERVICE}/?sap-client=500`,
   });
   if (status === 401 || isLoginRedirect(body || "")) throw new SessionExpiredError();
   if (status === 0) throw new TssUnavailableError(body || "no network response");

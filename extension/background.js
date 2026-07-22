@@ -31,7 +31,7 @@ async function getReadyTssTab() {
   return chrome.tabs.get(tab.id);
 }
 
-async function tssFetch(url, csrfUrl) {
+async function tssFetch(url) {
   const tab = await getReadyTssTab();
   if (!tab.url || !tab.url.startsWith("https://tss.ucsd.edu/")) {
     return { status: 401, body: "" };
@@ -39,21 +39,13 @@ async function tssFetch(url, csrfUrl) {
   const [injection] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     world: "MAIN",
-    args: [url, csrfUrl, FETCH_TIMEOUT_MS],
-    func: async (target, tokenUrl, timeoutMs) => {
+    args: [url, FETCH_TIMEOUT_MS],
+    func: async (target, timeoutMs) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const tokenRes = await fetch(tokenUrl, {
-          headers: { Accept: "application/json", "X-CSRF-Token": "Fetch" },
-          credentials: "include",
-          signal: controller.signal,
-        });
-        const token = tokenRes.headers.get("x-csrf-token") || "";
-        const headers = { Accept: "application/json" };
-        if (token) headers["X-CSRF-Token"] = token;
         const res = await fetch(target, {
-          headers,
+          headers: { Accept: "application/json", "sap-passport": "better-tss" },
           credentials: "include",
           signal: controller.signal,
         });
@@ -80,7 +72,7 @@ async function openTss() {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "tssFetch") {
-    tssFetch(msg.url, msg.csrfUrl)
+    tssFetch(msg.url)
       .then(sendResponse)
       .catch((e) => sendResponse({ status: 0, body: String((e && e.message) || e) }));
     return true;
