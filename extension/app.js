@@ -6,40 +6,50 @@ const SELECT =
 const PAGE_SIZE = 50;
 
 class SessionExpiredError extends Error {}
+class TssUnavailableError extends Error {}
 
 function buildUrl({ query, year, term }) {
   const filter = `AcYearText eq '${year}' and AcademicPeriodText eq '${term}'`;
   const params = [
     "sap-client=500",
-    "$count=true",
     `$select=${SELECT}`,
     `$filter=${encodeURIComponent(filter)}`,
     `$top=${PAGE_SIZE}`,
-    "$skip=0",
   ];
   const q = query.trim();
   if (q) params.push(`$search=${encodeURIComponent(`"${q}"`)}`);
   return `${SERVICE}/${ENTITY}?${params.join("&")}`;
 }
 
-function looksLikeLogin(status, body) {
+function isLoginRedirect(body) {
   return (
-    status === 403 ||
-    /^\s*<(?:!doctype|html)/i.test(body) ||
-    body.includes("SAMLRequest")
+    /SAMLRequest/.test(body) ||
+    /idp\/profile\/SAML2/.test(body) ||
+    /tssproxy\.ucsd\.edu/.test(body)
   );
 }
 
-async function searchCourses(opts) {
-  const res = await fetch(buildUrl(opts), {
-    headers: { Accept: "application/json" },
-    credentials: "include",
+function sendToBackground(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (resp) => {
+      const err = chrome.runtime.lastError;
+      if (err) return reject(new Error(err.message));
+      resolve(resp);
+    });
   });
-  const body = await res.text();
-  if (looksLikeLogin(res.status, body)) throw new SessionExpiredError();
-  if (!res.ok) throw new Error(`TSS returned ${res.status}`);
+}
+
+async function searchCourses(opts) {
+  const { status, body } = await sendToBackground({
+    type: "tssFetch",
+    url: buildUrl(opts),
+  });
+  if (status === 401 || isLoginRedirect(body || "")) throw new SessionExpiredError();
+  if (status === 0) throw new TssUnavailableError(body || "no network response");
+  if (status >= 500) throw new TssUnavailableError(`TSS returned ${status}`);
+  if (status < 200 || status >= 300) throw new Error(`TSS returned ${status}`);
   const data = JSON.parse(body);
-  return { total: data["@odata.count"] ?? 0, rows: data.value ?? [] };
+  return { rows: data.value ?? [] };
 }
 
 const els = {
@@ -84,30 +94,34 @@ function renderRows(rows) {
 }
 
 async function runSearch() {
-  const opts = {
-    query: els.query.value,
-    year: els.year.value,
-    term: els.term.value,
-  };
   showBanner(false);
   setStatus("Searching…");
   els.table.hidden = true;
   try {
-    const { total, rows } = await searchCourses(opts);
+    const { rows } = await searchCourses({
+      query: els.query.value,
+      year: els.year.value,
+      term: els.term.value,
+    });
     renderRows(rows);
-    const shown = Math.min(rows.length, PAGE_SIZE);
-    setStatus(
-      total === 0
-        ? "No courses found."
-        : `Showing ${shown} of ${total} course${total === 1 ? "" : "s"}.`,
-    );
+    if (rows.length === 0) {
+      setStatus("No courses found.");
+    } else if (rows.length === PAGE_SIZE) {
+      setStatus(`Showing the first ${PAGE_SIZE} — refine your search to narrow it down.`);
+    } else {
+      setStatus(`Showing ${rows.length} course${rows.length === 1 ? "" : "s"}.`);
+    }
   } catch (err) {
     if (err instanceof SessionExpiredError) {
       setStatus("");
       showBanner(true);
       return;
     }
-    setStatus(`Couldn't reach TSS: ${err.message}`);
+    if (err instanceof TssUnavailableError) {
+      setStatus(`TSS isn't responding right now (${err.message}). Try again shortly.`);
+      return;
+    }
+    setStatus(`Something went wrong: ${err.message}`);
   }
 }
 
@@ -117,5 +131,5 @@ els.form.addEventListener("submit", (e) => {
 });
 
 els.loginBtn.addEventListener("click", () => {
-  chrome.tabs.create({ url: "https://tss.ucsd.edu/fiori" });
+  sendToBackground({ type: "openTss" }).catch(() => {});
 });
