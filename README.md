@@ -33,6 +33,11 @@ tab and runs the OData `fetch` **inside that tab's own page context** via
 cookie attaches natively, exactly as the real TSS UI does it. Results are relayed back
 to the app page via `chrome.runtime` messaging.
 
+SAP enforces CSRF protection on browser-originated requests (it returns `403` with
+`x-csrf-token: Required` otherwise), so each call first does a `GET <service>/` with
+`X-CSRF-Token: Fetch`, reads the token from the response header, and sends it on the
+data request — the same handshake the real UI performs.
+
 Responses are classified honestly:
 
 - SAML redirect / no TSS tab logged in → **"Log in to TSS"** banner
