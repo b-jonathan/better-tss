@@ -63,6 +63,10 @@ h1 {
   background: var(--row-hover);
 }
 
+[hidden] {
+  display: none !important;
+}
+
 form {
   display: flex;
   flex-wrap: wrap;
