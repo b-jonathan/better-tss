@@ -8,7 +8,7 @@
   </head>
   <body>
     <header class="topbar">
-      <div class="topbar-title">better-tss · Course Planner</div>
+      <div class="topbar-title">better-tss</div>
       <div class="topbar-brand">
         <span class="unofficial">UNOFFICIAL</span>
         <span class="wordmark">UC San Diego</span>
@@ -18,14 +18,12 @@
     <div class="disclaimer">
       Unofficial, student-made planning tool —
       <strong>not affiliated with, endorsed by, or operated by UC San Diego.</strong>
-      Runs entirely in your browser on your own TSS session; nothing is sent anywhere else.
+      Runs entirely in your browser on your own TSS session.
     </div>
-
-    <div class="banner-strip" aria-hidden="true"></div>
 
     <main class="wrap">
       <div class="page-head">
-        <h1 class="page-title">Course Enrollment</h1>
+        <h1 class="page-title">Schedule Planner</h1>
         <div class="term">
           <select id="year">
             <option value="2026/2027" selected>2026/2027</option>
@@ -41,47 +39,33 @@
         </div>
       </div>
 
-      <p class="lede">
-        Plan your courses — search, add sections, and see them on a calendar.
-        Everything is saved to your local schedule only.
-      </p>
-
       <section id="login-banner" class="login-banner" hidden>
         <span>Your TSS session isn't active. Log in, then come back and search.</span>
         <button id="login-btn" type="button">Log in to TSS</button>
       </section>
 
       <form id="search-form" class="searchbar">
-        <label for="query">Search for Classes:</label>
         <input
           id="query"
           type="text"
-          placeholder="e.g., CSE, CSE 30"
+          placeholder="Search classes — e.g. CSE, CSE 30"
           autocomplete="off"
           autofocus
         />
         <button type="submit">Search</button>
       </form>
 
-      <section class="schedule">
-        <div class="tabs">
-          <button class="tab active" data-tab="list" type="button">List</button>
-          <button class="tab" data-tab="calendar" type="button">Calendar</button>
-          <span class="tab-spacer"></span>
-          <button id="clear-cal" class="tab-action" type="button">Clear schedule</button>
-        </div>
-        <div id="pane-list" class="pane">
-          <div id="schedule-list"></div>
-        </div>
-        <div id="pane-calendar" class="pane" hidden>
-          <div id="calendar" class="calendar"></div>
-          <p id="cal-note" class="cal-note"></p>
-        </div>
-      </section>
-
-      <h2 class="section-label">Search Results</h2>
       <p id="status" class="status"></p>
-      <div id="results" class="courses"></div>
+      <div id="results" class="results"></div>
+
+      <div class="schedule-head">
+        <h2>Your schedule</h2>
+        <button id="clear-cal" class="ghost-btn" type="button">Clear</button>
+      </div>
+      <div id="schedule-list" class="schedule-list"></div>
+
+      <div id="calendar" class="calendar"></div>
+      <p id="cal-note" class="cal-note"></p>
     </main>
 
     <script src="app.js"></script>

@@ -6,17 +6,25 @@ TSS is a SAP S/4HANA + Student Lifecycle Management system fronted by SAPUI5/Fio
 
 ## Status
 
-Early prototype. A Manifest V3 extension that opens a full-page UI and searches
-the TSS course catalog, WebReg-style: each course expands to show its sections
-(section ID, meeting days, times, instructor), lazy-loaded on click. Add a section
-to the **weekly calendar** to see it plotted by day and start/end time, with
-per-course colors and overlap/conflict highlighting. Reads only.
+Early prototype. A Manifest V3 extension that opens a full-page planner and
+searches the TSS course catalog. Each course expands into **section groups**
+(a lecture plus its discussion/lab options); pick a discussion and **Add** the
+whole group in one click, with a **teaching-method badge** (LE/DI) on each part.
+Added groups appear in the schedule list and on a **weekly calendar** below,
+plotted by day and start/end time with per-course colors and conflict highlighting.
+Reads only.
 
-Not wired yet / needs live verification against TSS:
-- Section **type (LE/DI/LA), seats, and building/room** (`YUCSD_CON_MODULE_DATA`/`_BLDG`/`_LOC`).
-- The **day-of-week parser** (`parseDays` in `app.js`) is built defensively for
-  several `DoWText` formats; calibrate it once a live `SCHED` sample confirms the
-  actual format. Weekend meetings aren't plotted (grid is Mon–Fri).
+Provisional / needs live verification against TSS (every data probe has timed out
+so far — TSS has been down):
+- **Section grouping** assumes the legacy `A00`/`A01` code convention (family =
+  leading letter, lecture = code ending in `00`). Unrecognized formats fall back
+  to per-section add, so nothing breaks — but this needs one real `SCHED` sample
+  to confirm the new system's format.
+- **Teaching method** (LE/DI) is *inferred* from the section code, not read from a
+  real field yet; LA and other types can't be distinguished until the field is found.
+- **Seats and building/room** aren't wired (`YUCSD_CON_MODULE_DATA`/`_BLDG`/`_LOC`).
+- The **day-of-week parser** (`parseDays`) is defensive across several `DoWText`
+  formats; calibrate once a live sample confirms the actual format. Grid is Mon–Fri.
 
 - [`extension/`](extension/) — the unpacked MV3 extension.
 - [`docs/tss-client-spec.md`](docs/tss-client-spec.md) — system architecture, auth model, full OData endpoint/entity catalog, client design, and read-vs-write feasibility.

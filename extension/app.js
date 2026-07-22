@@ -30,8 +30,24 @@ function colorFor(code) {
   return courseColor.get(code);
 }
 
-function itemLabel(item) {
-  return `${item.course.CourseAbbr ?? ""} ${item.section.sectionId}`.trim();
+function familyLetter(sectionId) {
+  const m = String(sectionId).match(/^[A-Za-z]+/);
+  return m ? m[0].toUpperCase() : String(sectionId);
+}
+
+function isLecture(sectionId) {
+  return /0\s*$/.test(String(sectionId)) && /00\s*$/.test(String(sectionId));
+}
+
+function methodLabel(sectionId) {
+  return isLecture(sectionId) ? "LE" : "DI";
+}
+
+function methodBadge(method, small) {
+  const b = document.createElement("span");
+  b.className = `method-badge ${method === "LE" ? "le" : "di"}${small ? " small" : ""}`;
+  b.textContent = method;
+  return b;
 }
 
 function buildCourseUrl({ query, year, term }) {
@@ -130,7 +146,9 @@ function groupSections(schedRows, instructorNames) {
   const bySection = new Map();
   for (const row of schedRows) {
     const id = row.SectionId || "—";
-    if (!bySection.has(id)) bySection.set(id, { sectionId: id, meetings: [] });
+    if (!bySection.has(id)) {
+      bySection.set(id, { sectionId: id, method: methodLabel(id), meetings: [] });
+    }
     const startMin = toMinutes(row.BeginTime);
     const endMin = toMinutes(row.EndTime);
     bySection.get(id).meetings.push({
@@ -150,12 +168,28 @@ function groupSections(schedRows, instructorNames) {
   return sections;
 }
 
-async function loadSections(moduleId) {
+function buildFamilies(sections) {
+  const fams = new Map();
+  for (const s of sections) {
+    const letter = familyLetter(s.sectionId);
+    if (!fams.has(letter)) fams.set(letter, { letter, lecture: null, subs: [] });
+    const fam = fams.get(letter);
+    if (isLecture(s.sectionId) && !fam.lecture) fam.lecture = s;
+    else fam.subs.push(s);
+  }
+  for (const fam of fams.values()) {
+    if (!fam.lecture && fam.subs.length) fam.lecture = fam.subs.shift();
+  }
+  return [...fams.values()];
+}
+
+async function loadFamilies(moduleId) {
   const [schedRows, instrRows] = await Promise.all([
     fetchOData(buildByModuleUrl(SCHED_ENTITY, moduleId)),
     fetchOData(buildByModuleUrl(INSTR_ENTITY, moduleId)),
   ]);
-  return groupSections(schedRows, instrRows.map((r) => r.InstructorName).filter(Boolean));
+  const sections = groupSections(schedRows, instrRows.map((r) => r.InstructorName).filter(Boolean));
+  return buildFamilies(sections);
 }
 
 const els = {
@@ -171,9 +205,6 @@ const els = {
   calNote: document.getElementById("cal-note"),
   clearCal: document.getElementById("clear-cal"),
   scheduleList: document.getElementById("schedule-list"),
-  paneList: document.getElementById("pane-list"),
-  paneCalendar: document.getElementById("pane-calendar"),
-  tabs: [...document.querySelectorAll(".tab")],
 };
 
 function setStatus(text) {
@@ -184,26 +215,39 @@ function showBanner(show) {
   els.banner.hidden = !show;
 }
 
-function sectionKey(moduleId, sectionId) {
-  return `${moduleId}:${sectionId}`;
+function groupKey(moduleId, letter) {
+  return `${moduleId}:${letter}`;
+}
+
+function partsOf(entry) {
+  return [entry.lecture, entry.sub].filter(Boolean);
 }
 
 function placedBlocks() {
   const perDay = DAYS.map(() => []);
   const unplaced = [];
-  for (const item of schedule.values()) {
-    const label = itemLabel(item);
-    for (const meeting of item.section.meetings) {
-      if (meeting.startMin === null || meeting.endMin === null || meeting.dayIndices.length === 0) {
-        unplaced.push(`${label} (${meeting.daysText || "TBA"} ${meeting.timeLabel})`);
-        continue;
-      }
-      for (const dayIdx of meeting.dayIndices) {
-        if (dayIdx >= DAYS.length) {
-          unplaced.push(`${label} (${meeting.daysText})`);
+  for (const entry of schedule.values()) {
+    for (const part of partsOf(entry)) {
+      const label = `${entry.course.CourseAbbr ?? ""} ${part.sectionId}`.trim();
+      for (const meeting of part.meetings) {
+        if (meeting.startMin === null || meeting.endMin === null || meeting.dayIndices.length === 0) {
+          unplaced.push(`${label} (${meeting.daysText || "TBA"} ${meeting.timeLabel})`);
           continue;
         }
-        perDay[dayIdx].push({ label, color: item.color, startMin: meeting.startMin, endMin: meeting.endMin, timeLabel: meeting.timeLabel });
+        for (const dayIdx of meeting.dayIndices) {
+          if (dayIdx >= DAYS.length) {
+            unplaced.push(`${label} (${meeting.daysText})`);
+            continue;
+          }
+          perDay[dayIdx].push({
+            label,
+            method: part.method,
+            color: entry.color,
+            startMin: meeting.startMin,
+            endMin: meeting.endMin,
+            timeLabel: meeting.timeLabel,
+          });
+        }
       }
     }
   }
@@ -258,7 +302,7 @@ function renderCalendar() {
       el.style.height = `${(block.endMin - block.startMin) * PX_PER_MIN}px`;
       el.style.background = block.color;
       const name = document.createElement("strong");
-      name.textContent = block.label;
+      name.textContent = `${block.label} ${block.method}`;
       const time = document.createElement("span");
       time.textContent = block.timeLabel;
       el.append(name, time);
@@ -269,10 +313,16 @@ function renderCalendar() {
 
   els.calNote.textContent =
     schedule.size === 0
-      ? "Add sections from the results below to see them here."
+      ? "Add classes above to see them here."
       : unplaced.length
         ? `Not shown (weekend or no time): ${unplaced.join("; ")}`
         : "";
+}
+
+function meetingSummary(part) {
+  return part.meetings
+    .map((m) => `${m.daysText || "TBA"} ${m.timeLabel}`.trim())
+    .join(", ");
 }
 
 function renderScheduleList() {
@@ -280,61 +330,53 @@ function renderScheduleList() {
   if (schedule.size === 0) {
     const empty = document.createElement("p");
     empty.className = "empty-schedule";
-    empty.textContent =
-      "No classes on your schedule for this term. Search for classes below, then add their sections.";
+    empty.textContent = "Nothing added yet. Search above and add a class.";
     els.scheduleList.appendChild(empty);
     return;
   }
-  const table = document.createElement("table");
-  table.className = "webreg";
-  const headers = ["Subject Course", "Title", "Section", "Type", "Instructor", "Units", "Days", "Time", "BLDG", "Room", ""];
-  const thead = document.createElement("thead");
-  const htr = document.createElement("tr");
-  for (const h of headers) {
-    const th = document.createElement("th");
-    th.textContent = h;
-    htr.appendChild(th);
-  }
-  thead.appendChild(htr);
-  table.appendChild(thead);
+  for (const entry of schedule.values()) {
+    const card = document.createElement("div");
+    card.className = "sched-card";
+    card.style.borderLeftColor = entry.color;
 
-  const tbody = document.createElement("tbody");
-  for (const item of schedule.values()) {
-    const c = item.course;
-    const s = item.section;
-    const days = [...new Set(s.meetings.map((m) => m.daysText).filter(Boolean))].join(", ");
-    const times = [...new Set(s.meetings.map((m) => m.timeLabel).filter(Boolean))].join(", ");
-    const tr = document.createElement("tr");
-
-    const first = document.createElement("td");
-    const dot = document.createElement("span");
-    dot.className = "course-dot";
-    dot.style.background = item.color;
-    first.append(dot, document.createTextNode(c.CourseAbbr ?? ""));
-    tr.appendChild(first);
-
-    for (const value of [c.CourseTitle ?? "", s.sectionId ?? "", "—", s.instructors ?? "", c.CreditsDisplay ?? "", days, times, "—", "—"]) {
-      const td = document.createElement("td");
-      td.textContent = value;
-      tr.appendChild(td);
-    }
-
-    const rm = document.createElement("td");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "rm-btn";
-    btn.textContent = "Remove";
-    btn.addEventListener("click", () => {
-      schedule.delete(item.key);
+    const head = document.createElement("div");
+    head.className = "sched-card-head";
+    const title = document.createElement("span");
+    title.className = "sched-title";
+    title.textContent = `${entry.course.CourseAbbr ?? ""} — ${entry.course.CourseTitle ?? ""}`;
+    const units = document.createElement("span");
+    units.className = "sched-units";
+    units.textContent = `${entry.course.CreditsDisplay ?? "?"} units`;
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "rm-btn";
+    rm.textContent = "Remove";
+    rm.addEventListener("click", () => {
+      schedule.delete(entry.key);
       renderSchedule();
       syncAddButtons();
     });
-    rm.appendChild(btn);
-    tr.appendChild(rm);
-    tbody.appendChild(tr);
+    head.append(title, units, rm);
+    card.appendChild(head);
+
+    for (const part of partsOf(entry)) {
+      const line = document.createElement("div");
+      line.className = "sched-part";
+      const badge = methodBadge(part.method);
+      const code = document.createElement("span");
+      code.className = "sched-sec";
+      code.textContent = part.sectionId;
+      const meet = document.createElement("span");
+      meet.className = "sched-meet";
+      meet.textContent = meetingSummary(part) || "TBA";
+      const instr = document.createElement("span");
+      instr.className = "sched-instr";
+      instr.textContent = part.instructors || "";
+      line.append(badge, code, meet, instr);
+      card.appendChild(line);
+    }
+    els.scheduleList.appendChild(card);
   }
-  table.appendChild(tbody);
-  els.scheduleList.appendChild(table);
 }
 
 function renderSchedule() {
@@ -350,60 +392,92 @@ function syncAddButtons() {
   });
 }
 
-function toggleSection(course, section, btn) {
-  const key = sectionKey(course.ModuleID, section.sectionId);
+function addFamily(course, family, subId) {
+  const key = groupKey(course.ModuleID, family.letter);
   if (schedule.has(key)) {
     schedule.delete(key);
   } else {
-    schedule.set(key, { key, course, section, color: colorFor(course.CourseAbbr ?? key) });
+    const sub = family.subs.find((s) => s.sectionId === subId) || null;
+    schedule.set(key, {
+      key,
+      course,
+      lecture: family.lecture,
+      sub,
+      color: colorFor(course.CourseAbbr ?? key),
+    });
   }
   renderSchedule();
   syncAddButtons();
 }
 
-function renderSections(host, course, sections) {
+function renderFamilies(host, course, families) {
   host.replaceChildren();
-  if (sections.length === 0) {
+  if (families.length === 0) {
     host.textContent = "No sections listed.";
     return;
   }
-  const table = document.createElement("table");
-  table.className = "sections";
-  const thead = document.createElement("thead");
-  thead.innerHTML =
-    "<tr><th></th><th>Section</th><th>Days</th><th>Time</th><th>Instructor</th></tr>";
-  table.appendChild(thead);
-  const tbody = document.createElement("tbody");
-  for (const s of sections) {
-    const meetings = s.meetings.length ? s.meetings : [{ daysText: "", timeLabel: "TBA" }];
-    meetings.forEach((meeting, i) => {
-      const tr = document.createElement("tr");
+  for (const family of families) {
+    const fam = document.createElement("div");
+    fam.className = "family";
 
-      const addCell = document.createElement("td");
-      if (i === 0) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "add-btn";
-        const key = sectionKey(course.ModuleID, s.sectionId);
-        btn.dataset.key = key;
-        const isAdded = schedule.has(key);
-        btn.textContent = isAdded ? "✓ Added" : "＋ Add";
-        if (isAdded) btn.classList.add("added");
-        btn.addEventListener("click", () => toggleSection(course, s, btn));
-        addCell.appendChild(btn);
-      }
-      tr.appendChild(addCell);
+    const lectureLine = document.createElement("div");
+    lectureLine.className = "family-lecture";
+    if (family.lecture) {
+      const badge = methodBadge(family.lecture.method);
+      const code = document.createElement("span");
+      code.className = "sched-sec";
+      code.textContent = family.lecture.sectionId;
+      const meet = document.createElement("span");
+      meet.className = "sched-meet";
+      meet.textContent = meetingSummary(family.lecture) || "TBA";
+      const instr = document.createElement("span");
+      instr.className = "sched-instr";
+      instr.textContent = family.lecture.instructors || "";
+      lectureLine.append(badge, code, meet, instr);
+    } else {
+      lectureLine.textContent = `Section group ${family.letter}`;
+    }
 
-      for (const value of [i === 0 ? s.sectionId : "", meeting.daysText, meeting.timeLabel, i === 0 ? s.instructors : ""]) {
-        const td = document.createElement("td");
-        td.textContent = value;
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    });
+    const controls = document.createElement("div");
+    controls.className = "family-controls";
+    const radioName = `${course.ModuleID}-${family.letter}`;
+    let selectedSub = family.subs[0]?.sectionId ?? null;
+
+    if (family.subs.length) {
+      family.subs.forEach((sub, idx) => {
+        const opt = document.createElement("label");
+        opt.className = "sub-opt";
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = radioName;
+        radio.value = sub.sectionId;
+        if (idx === 0) radio.checked = true;
+        radio.addEventListener("change", () => {
+          selectedSub = sub.sectionId;
+        });
+        const text = document.createElement("span");
+        const badge = methodBadge(sub.method, true);
+        text.append(badge, document.createTextNode(` ${sub.sectionId} · ${meetingSummary(sub) || "TBA"}`));
+        opt.append(radio, text);
+        controls.appendChild(opt);
+      });
+    }
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "add-btn";
+    const key = groupKey(course.ModuleID, family.letter);
+    addBtn.dataset.key = key;
+    const isAdded = schedule.has(key);
+    addBtn.textContent = isAdded ? "✓ Added" : "＋ Add";
+    if (isAdded) addBtn.classList.add("added");
+    addBtn.addEventListener("click", () => addFamily(course, family, selectedSub));
+
+    fam.append(lectureLine);
+    if (family.subs.length) fam.append(controls);
+    fam.append(addBtn);
+    host.appendChild(fam);
   }
-  table.appendChild(tbody);
-  host.appendChild(table);
 }
 
 function renderCourses(courses) {
@@ -441,8 +515,8 @@ function renderCourses(courses) {
       if (!opening || loaded) return;
       detail.textContent = "Loading sections…";
       try {
-        const sections = await loadSections(course.ModuleID);
-        renderSections(detail, course, sections);
+        const families = await loadFamilies(course.ModuleID);
+        renderFamilies(detail, course, families);
         loaded = true;
       } catch (err) {
         if (err instanceof SessionExpiredError) {
@@ -496,13 +570,6 @@ async function runSearch() {
   }
 }
 
-function switchTab(name) {
-  for (const tab of els.tabs) tab.classList.toggle("active", tab.dataset.tab === name);
-  els.paneList.hidden = name !== "list";
-  els.paneCalendar.hidden = name !== "calendar";
-  if (name === "calendar") renderCalendar();
-}
-
 els.form.addEventListener("submit", (e) => {
   e.preventDefault();
   runSearch();
@@ -517,9 +584,5 @@ els.clearCal.addEventListener("click", () => {
   renderSchedule();
   syncAddButtons();
 });
-
-for (const tab of els.tabs) {
-  tab.addEventListener("click", () => switchTab(tab.dataset.tab));
-}
 
 renderSchedule();
