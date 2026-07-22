@@ -107,6 +107,132 @@ button:hover {
   margin: 4px 0 16px;
 }
 
+.calendar-panel {
+  margin-bottom: 24px;
+}
+
+.calendar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.calendar-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.ghost-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.ghost-btn:hover {
+  color: var(--fg);
+  opacity: 1;
+}
+
+.calendar {
+  display: grid;
+  grid-template-columns: 56px repeat(5, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.cal-corner {
+  border-bottom: 1px solid var(--border);
+}
+
+.cal-dayhead {
+  text-align: center;
+  padding: 8px 0;
+  font-weight: 600;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+
+.cal-timeaxis {
+  position: relative;
+}
+
+.cal-hour {
+  position: absolute;
+  right: 6px;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.cal-daycol {
+  position: relative;
+  border-left: 1px solid var(--border);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 47px,
+    var(--border) 47px,
+    var(--border) 48px
+  );
+}
+
+.cal-block {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  border-radius: 5px;
+  padding: 3px 5px;
+  color: #fff;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.cal-block strong {
+  font-size: 0.72rem;
+  line-height: 1.1;
+}
+
+.cal-block span {
+  font-size: 0.65rem;
+  opacity: 0.9;
+}
+
+.cal-block.conflict {
+  outline: 2px solid #ef4444;
+  outline-offset: -2px;
+}
+
+.cal-note {
+  margin: 8px 2px 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.add-btn {
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  white-space: nowrap;
+}
+
+.add-btn.added {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
 .courses {
   display: flex;
   flex-direction: column;

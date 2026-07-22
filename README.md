@@ -8,11 +8,15 @@ TSS is a SAP S/4HANA + Student Lifecycle Management system fronted by SAPUI5/Fio
 
 Early prototype. A Manifest V3 extension that opens a full-page UI and searches
 the TSS course catalog, WebReg-style: each course expands to show its sections
-(section ID, meeting days, times, instructor), lazy-loaded on click. Reads only.
+(section ID, meeting days, times, instructor), lazy-loaded on click. Add a section
+to the **weekly calendar** to see it plotted by day and start/end time, with
+per-course colors and overlap/conflict highlighting. Reads only.
 
-Section **type (LE/DI/LA), seats, and building/room** are not wired yet — those
-depend on `YUCSD_CON_MODULE_DATA`/`_BLDG`/`_LOC` fields that still need verifying
-against the live service.
+Not wired yet / needs live verification against TSS:
+- Section **type (LE/DI/LA), seats, and building/room** (`YUCSD_CON_MODULE_DATA`/`_BLDG`/`_LOC`).
+- The **day-of-week parser** (`parseDays` in `app.js`) is built defensively for
+  several `DoWText` formats; calibrate it once a live `SCHED` sample confirms the
+  actual format. Weekend meetings aren't plotted (grid is Mon–Fri).
 
 - [`extension/`](extension/) — the unpacked MV3 extension.
 - [`docs/tss-client-spec.md`](docs/tss-client-spec.md) — system architecture, auth model, full OData endpoint/entity catalog, client design, and read-vs-write feasibility.
