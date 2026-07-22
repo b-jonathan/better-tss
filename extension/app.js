@@ -13,14 +13,14 @@ const DAY_END_MIN = 22 * 60;
 const PX_PER_MIN = 0.8;
 const GRID_HEIGHT = (DAY_END_MIN - DAY_START_MIN) * PX_PER_MIN;
 const COURSE_COLORS = [
-  "#2563eb", "#16a34a", "#db2777", "#d97706",
+  "#00629b", "#16a34a", "#db2777", "#d97706",
   "#7c3aed", "#0891b2", "#dc2626", "#4d7c0f",
 ];
 
 class SessionExpiredError extends Error {}
 class TssUnavailableError extends Error {}
 
-const calendar = new Map();
+const schedule = new Map();
 const courseColor = new Map();
 
 function colorFor(code) {
@@ -28,6 +28,10 @@ function colorFor(code) {
     courseColor.set(code, COURSE_COLORS[courseColor.size % COURSE_COLORS.length]);
   }
   return courseColor.get(code);
+}
+
+function itemLabel(item) {
+  return `${item.course.CourseAbbr ?? ""} ${item.section.sectionId}`.trim();
 }
 
 function buildCourseUrl({ query, year, term }) {
@@ -166,6 +170,10 @@ const els = {
   calendar: document.getElementById("calendar"),
   calNote: document.getElementById("cal-note"),
   clearCal: document.getElementById("clear-cal"),
+  scheduleList: document.getElementById("schedule-list"),
+  paneList: document.getElementById("pane-list"),
+  paneCalendar: document.getElementById("pane-calendar"),
+  tabs: [...document.querySelectorAll(".tab")],
 };
 
 function setStatus(text) {
@@ -176,21 +184,26 @@ function showBanner(show) {
   els.banner.hidden = !show;
 }
 
+function sectionKey(moduleId, sectionId) {
+  return `${moduleId}:${sectionId}`;
+}
+
 function placedBlocks() {
   const perDay = DAYS.map(() => []);
   const unplaced = [];
-  for (const item of calendar.values()) {
-    for (const meeting of item.meetings) {
+  for (const item of schedule.values()) {
+    const label = itemLabel(item);
+    for (const meeting of item.section.meetings) {
       if (meeting.startMin === null || meeting.endMin === null || meeting.dayIndices.length === 0) {
-        unplaced.push(`${item.label} (${meeting.daysText || "TBA"} ${meeting.timeLabel})`);
+        unplaced.push(`${label} (${meeting.daysText || "TBA"} ${meeting.timeLabel})`);
         continue;
       }
       for (const dayIdx of meeting.dayIndices) {
         if (dayIdx >= DAYS.length) {
-          unplaced.push(`${item.label} (${meeting.daysText})`);
+          unplaced.push(`${label} (${meeting.daysText})`);
           continue;
         }
-        perDay[dayIdx].push({ item, startMin: meeting.startMin, endMin: meeting.endMin, timeLabel: meeting.timeLabel });
+        perDay[dayIdx].push({ label, color: item.color, startMin: meeting.startMin, endMin: meeting.endMin, timeLabel: meeting.timeLabel });
       }
     }
   }
@@ -234,7 +247,7 @@ function renderCalendar() {
   els.calendar.appendChild(axis);
 
   const { perDay, unplaced } = placedBlocks();
-  perDay.forEach((blocks, dayIdx) => {
+  for (const blocks of perDay) {
     const col = document.createElement("div");
     col.className = "cal-daycol";
     col.style.height = `${GRID_HEIGHT}px`;
@@ -243,43 +256,109 @@ function renderCalendar() {
       el.className = "cal-block" + (block.conflict ? " conflict" : "");
       el.style.top = `${(block.startMin - DAY_START_MIN) * PX_PER_MIN}px`;
       el.style.height = `${(block.endMin - block.startMin) * PX_PER_MIN}px`;
-      el.style.background = block.item.color;
-      el.innerHTML = `<strong>${block.item.label}</strong><span>${block.timeLabel}</span>`;
+      el.style.background = block.color;
+      const name = document.createElement("strong");
+      name.textContent = block.label;
+      const time = document.createElement("span");
+      time.textContent = block.timeLabel;
+      el.append(name, time);
       col.appendChild(el);
     }
     els.calendar.appendChild(col);
-    void dayIdx;
-  });
+  }
 
   els.calNote.textContent =
-    calendar.size === 0
+    schedule.size === 0
       ? "Add sections from the results below to see them here."
       : unplaced.length
         ? `Not shown (weekend or no time): ${unplaced.join("; ")}`
         : "";
 }
 
-function sectionKey(moduleId, sectionId) {
-  return `${moduleId}:${sectionId}`;
+function renderScheduleList() {
+  els.scheduleList.replaceChildren();
+  if (schedule.size === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-schedule";
+    empty.textContent =
+      "No classes on your schedule for this term. Search for classes below, then add their sections.";
+    els.scheduleList.appendChild(empty);
+    return;
+  }
+  const table = document.createElement("table");
+  table.className = "webreg";
+  const headers = ["Subject Course", "Title", "Section", "Type", "Instructor", "Units", "Days", "Time", "BLDG", "Room", ""];
+  const thead = document.createElement("thead");
+  const htr = document.createElement("tr");
+  for (const h of headers) {
+    const th = document.createElement("th");
+    th.textContent = h;
+    htr.appendChild(th);
+  }
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const item of schedule.values()) {
+    const c = item.course;
+    const s = item.section;
+    const days = [...new Set(s.meetings.map((m) => m.daysText).filter(Boolean))].join(", ");
+    const times = [...new Set(s.meetings.map((m) => m.timeLabel).filter(Boolean))].join(", ");
+    const tr = document.createElement("tr");
+
+    const first = document.createElement("td");
+    const dot = document.createElement("span");
+    dot.className = "course-dot";
+    dot.style.background = item.color;
+    first.append(dot, document.createTextNode(c.CourseAbbr ?? ""));
+    tr.appendChild(first);
+
+    for (const value of [c.CourseTitle ?? "", s.sectionId ?? "", "—", s.instructors ?? "", c.CreditsDisplay ?? "", days, times, "—", "—"]) {
+      const td = document.createElement("td");
+      td.textContent = value;
+      tr.appendChild(td);
+    }
+
+    const rm = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "rm-btn";
+    btn.textContent = "Remove";
+    btn.addEventListener("click", () => {
+      schedule.delete(item.key);
+      renderSchedule();
+      syncAddButtons();
+    });
+    rm.appendChild(btn);
+    tr.appendChild(rm);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  els.scheduleList.appendChild(table);
+}
+
+function renderSchedule() {
+  renderScheduleList();
+  renderCalendar();
+}
+
+function syncAddButtons() {
+  document.querySelectorAll(".add-btn").forEach((btn) => {
+    const added = schedule.has(btn.dataset.key);
+    btn.textContent = added ? "✓ Added" : "＋ Add";
+    btn.classList.toggle("added", added);
+  });
 }
 
 function toggleSection(course, section, btn) {
   const key = sectionKey(course.ModuleID, section.sectionId);
-  if (calendar.has(key)) {
-    calendar.delete(key);
-    btn.textContent = "＋ Add";
-    btn.classList.remove("added");
+  if (schedule.has(key)) {
+    schedule.delete(key);
   } else {
-    calendar.set(key, {
-      key,
-      label: `${course.CourseAbbr ?? ""} ${section.sectionId}`.trim(),
-      color: colorFor(course.CourseAbbr ?? key),
-      meetings: section.meetings,
-    });
-    btn.textContent = "✓ Added";
-    btn.classList.add("added");
+    schedule.set(key, { key, course, section, color: colorFor(course.CourseAbbr ?? key) });
   }
-  renderCalendar();
+  renderSchedule();
+  syncAddButtons();
 }
 
 function renderSections(host, course, sections) {
@@ -290,8 +369,10 @@ function renderSections(host, course, sections) {
   }
   const table = document.createElement("table");
   table.className = "sections";
-  table.innerHTML =
-    "<thead><tr><th></th><th>Section</th><th>Days</th><th>Time</th><th>Instructor</th></tr></thead>";
+  const thead = document.createElement("thead");
+  thead.innerHTML =
+    "<tr><th></th><th>Section</th><th>Days</th><th>Time</th><th>Instructor</th></tr>";
+  table.appendChild(thead);
   const tbody = document.createElement("tbody");
   for (const s of sections) {
     const meetings = s.meetings.length ? s.meetings : [{ daysText: "", timeLabel: "TBA" }];
@@ -304,7 +385,8 @@ function renderSections(host, course, sections) {
         btn.type = "button";
         btn.className = "add-btn";
         const key = sectionKey(course.ModuleID, s.sectionId);
-        const isAdded = calendar.has(key);
+        btn.dataset.key = key;
+        const isAdded = schedule.has(key);
         btn.textContent = isAdded ? "✓ Added" : "＋ Add";
         if (isAdded) btn.classList.add("added");
         btn.addEventListener("click", () => toggleSection(course, s, btn));
@@ -312,13 +394,7 @@ function renderSections(host, course, sections) {
       }
       tr.appendChild(addCell);
 
-      const cells = [
-        i === 0 ? s.sectionId : "",
-        meeting.daysText,
-        meeting.timeLabel,
-        i === 0 ? s.instructors : "",
-      ];
-      for (const value of cells) {
+      for (const value of [i === 0 ? s.sectionId : "", meeting.daysText, meeting.timeLabel, i === 0 ? s.instructors : ""]) {
         const td = document.createElement("td");
         td.textContent = value;
         tr.appendChild(td);
@@ -339,11 +415,19 @@ function renderCourses(courses) {
     const headerBtn = document.createElement("button");
     headerBtn.className = "course-header";
     headerBtn.type = "button";
-    headerBtn.innerHTML = `
-      <span class="caret">▸</span>
-      <span class="course-code">${course.CourseAbbr ?? ""}</span>
-      <span class="course-title">${course.CourseTitle ?? ""}</span>
-      <span class="course-units">${course.CreditsDisplay ?? ""} units</span>`;
+    const caret = document.createElement("span");
+    caret.className = "caret";
+    caret.textContent = "▸";
+    const code = document.createElement("span");
+    code.className = "course-code";
+    code.textContent = course.CourseAbbr ?? "";
+    const title = document.createElement("span");
+    title.className = "course-title";
+    title.textContent = course.CourseTitle ?? "";
+    const units = document.createElement("span");
+    units.className = "course-units";
+    units.textContent = `${course.CreditsDisplay ?? ""} units`;
+    headerBtn.append(caret, code, title, units);
 
     const detail = document.createElement("div");
     detail.className = "course-detail";
@@ -412,6 +496,13 @@ async function runSearch() {
   }
 }
 
+function switchTab(name) {
+  for (const tab of els.tabs) tab.classList.toggle("active", tab.dataset.tab === name);
+  els.paneList.hidden = name !== "list";
+  els.paneCalendar.hidden = name !== "calendar";
+  if (name === "calendar") renderCalendar();
+}
+
 els.form.addEventListener("submit", (e) => {
   e.preventDefault();
   runSearch();
@@ -422,12 +513,13 @@ els.loginBtn.addEventListener("click", () => {
 });
 
 els.clearCal.addEventListener("click", () => {
-  calendar.clear();
-  renderCalendar();
-  document.querySelectorAll(".add-btn.added").forEach((b) => {
-    b.textContent = "＋ Add";
-    b.classList.remove("added");
-  });
+  schedule.clear();
+  renderSchedule();
+  syncAddButtons();
 });
 
-renderCalendar();
+for (const tab of els.tabs) {
+  tab.addEventListener("click", () => switchTab(tab.dataset.tab));
+}
+
+renderSchedule();

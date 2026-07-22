@@ -7,50 +7,82 @@
     <link rel="stylesheet" href="app.css" />
   </head>
   <body>
-    <header>
-      <h1>better-tss</h1>
-      <span class="subtitle">UCSD Schedule of Classes</span>
+    <header class="topbar">
+      <div class="topbar-title">better-tss · Course Planner</div>
+      <div class="topbar-brand">
+        <span class="unofficial">UNOFFICIAL</span>
+        <span class="wordmark">UC San Diego</span>
+      </div>
     </header>
 
-    <section id="login-banner" class="banner" hidden>
-      <span>Your TSS session isn't active. Log in, then come back and search.</span>
-      <button id="login-btn">Log in to TSS</button>
-    </section>
+    <div class="disclaimer">
+      Unofficial, student-made planning tool —
+      <strong>not affiliated with, endorsed by, or operated by UC San Diego.</strong>
+      Runs entirely in your browser on your own TSS session; nothing is sent anywhere else.
+    </div>
 
-    <form id="search-form">
-      <input
-        id="query"
-        type="text"
-        placeholder="Subject or course, e.g. CSE or CSE 30"
-        autocomplete="off"
-        autofocus
-      />
-      <select id="year">
-        <option value="2026/2027" selected>2026/2027</option>
-        <option value="2025/2026">2025/2026</option>
-      </select>
-      <select id="term">
-        <option value="Fall Quarter" selected>Fall Quarter</option>
-        <option value="Winter Quarter">Winter Quarter</option>
-        <option value="Spring Quarter">Spring Quarter</option>
-        <option value="Summer Session I">Summer Session I</option>
-        <option value="Summer Session II">Summer Session II</option>
-      </select>
-      <button type="submit">Search</button>
-    </form>
+    <div class="banner-strip" aria-hidden="true"></div>
 
-    <section class="calendar-panel">
-      <div class="calendar-head">
-        <h2>My Calendar</h2>
-        <button id="clear-cal" type="button" class="ghost-btn">Clear</button>
+    <main class="wrap">
+      <div class="page-head">
+        <h1 class="page-title">Course Enrollment</h1>
+        <div class="term">
+          <select id="year">
+            <option value="2026/2027" selected>2026/2027</option>
+            <option value="2025/2026">2025/2026</option>
+          </select>
+          <select id="term">
+            <option value="Fall Quarter" selected>Fall Quarter</option>
+            <option value="Winter Quarter">Winter Quarter</option>
+            <option value="Spring Quarter">Spring Quarter</option>
+            <option value="Summer Session I">Summer Session I</option>
+            <option value="Summer Session II">Summer Session II</option>
+          </select>
+        </div>
       </div>
-      <div id="calendar" class="calendar"></div>
-      <p id="cal-note" class="cal-note"></p>
-    </section>
 
-    <p id="status" class="status"></p>
+      <p class="lede">
+        Plan your courses — search, add sections, and see them on a calendar.
+        Everything is saved to your local schedule only.
+      </p>
 
-    <div id="results" class="courses"></div>
+      <section id="login-banner" class="login-banner" hidden>
+        <span>Your TSS session isn't active. Log in, then come back and search.</span>
+        <button id="login-btn" type="button">Log in to TSS</button>
+      </section>
+
+      <form id="search-form" class="searchbar">
+        <label for="query">Search for Classes:</label>
+        <input
+          id="query"
+          type="text"
+          placeholder="e.g., CSE, CSE 30"
+          autocomplete="off"
+          autofocus
+        />
+        <button type="submit">Search</button>
+      </form>
+
+      <section class="schedule">
+        <div class="tabs">
+          <button class="tab active" data-tab="list" type="button">List</button>
+          <button class="tab" data-tab="calendar" type="button">Calendar</button>
+          <span class="tab-spacer"></span>
+          <button id="clear-cal" class="tab-action" type="button">Clear schedule</button>
+        </div>
+        <div id="pane-list" class="pane">
+          <div id="schedule-list"></div>
+        </div>
+        <div id="pane-calendar" class="pane" hidden>
+          <div id="calendar" class="calendar"></div>
+          <p id="cal-note" class="cal-note"></p>
+        </div>
+      </section>
+
+      <h2 class="section-label">Search Results</h2>
+      <p id="status" class="status"></p>
+      <div id="results" class="courses"></div>
+    </main>
 
     <script src="app.js"></script>
   </body>
