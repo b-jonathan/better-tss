@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>better-tss</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header>
+      <h1>better-tss</h1>
+      <span class="subtitle">UCSD Schedule of Classes</span>
+    </header>
+
+    <section id="login-banner" class="banner" hidden>
+      <span>Your TSS session isn't active. Log in, then come back and search.</span>
+      <button id="login-btn">Log in to TSS</button>
+    </section>
+
+    <form id="search-form">
+      <input
+        id="query"
+        type="text"
+        placeholder="Subject or course, e.g. CSE or CSE 30"
+        autocomplete="off"
+        autofocus
+      />
+      <select id="year">
+        <option value="2026/2027" selected>2026/2027</option>
+        <option value="2025/2026">2025/2026</option>
+      </select>
+      <select id="term">
+        <option value="Fall Quarter" selected>Fall Quarter</option>
+        <option value="Winter Quarter">Winter Quarter</option>
+        <option value="Spring Quarter">Spring Quarter</option>
+        <option value="Summer Session I">Summer Session I</option>
+        <option value="Summer Session II">Summer Session II</option>
+      </select>
+      <button type="submit">Search</button>
+    </form>
+
+    <p id="status" class="status"></p>
+
+    <table id="results" hidden>
+      <thead>
+        <tr>
+          <th>Course</th>
+          <th>Title</th>
+          <th>Dept</th>
+          <th>Units</th>
+          <th>Level</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <script src="app.js"></script>
+  </body>
+</html>

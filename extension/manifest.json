@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "better-tss",
+  "version": "0.1.0",
+  "description": "A humane client for UCSD TSS Schedule of Classes.",
+  "host_permissions": ["https://tss.ucsd.edu/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Open better-tss" }
+}
