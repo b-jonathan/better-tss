@@ -23,6 +23,9 @@ class TssUnavailableError extends Error {}
 const schedule = new Map();
 const courseColor = new Map();
 
+const KEEPALIVE_MS = 5 * 60 * 1000;
+let sessionSeen = false;
+
 function colorFor(code) {
   if (!courseColor.has(code)) {
     courseColor.set(code, COURSE_COLORS[courseColor.size % COURSE_COLORS.length]);
@@ -92,7 +95,9 @@ async function fetchOData(url) {
   if (status === 0) throw new TssUnavailableError(body || "no network response");
   if (status >= 500) throw new TssUnavailableError(`TSS returned ${status}`);
   if (status < 200 || status >= 300) throw new Error(`TSS returned ${status}`);
-  return JSON.parse(body).value ?? [];
+  const rows = JSON.parse(body).value ?? [];
+  sessionSeen = true;
+  return rows;
 }
 
 function toMinutes(value) {
@@ -598,6 +603,16 @@ els.clearCal.addEventListener("click", () => {
 
 els.viewList.addEventListener("click", () => setView("list"));
 els.viewCal.addEventListener("click", () => setView("cal"));
+
+function keepSessionAlive() {
+  if (!sessionSeen || document.hidden) return;
+  sendToBackground({
+    type: "tssFetch",
+    url: `${SERVICE}/YUCSD_I_PERYRT_SOC?sap-client=500&$top=1`,
+  }).catch(() => {});
+}
+
+setInterval(keepSessionAlive, KEEPALIVE_MS);
 
 renderSchedule();
 setView("list");
