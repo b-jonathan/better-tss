@@ -36,6 +36,14 @@ function colorFor(code) {
   return courseColor.get(code);
 }
 
+function debounce(fn, ms) {
+  let timer;
+  return () => {
+    clearTimeout(timer);
+    timer = setTimeout(fn, ms);
+  };
+}
+
 function methodBadge(method) {
   const cls = method === "LE" ? "le" : method === "LA" ? "la" : "di";
   const b = document.createElement("span");
@@ -260,7 +268,6 @@ const els = {
   genSummary: document.getElementById("gen-summary"),
   prev: document.getElementById("prev"),
   next: document.getElementById("next"),
-  generate: document.getElementById("generate"),
   spread: document.getElementById("pref-spread"),
   b2b: document.getElementById("pref-b2b"),
   start: document.getElementById("pref-start"),
@@ -396,7 +403,7 @@ function renderGenerated() {
   els.next.disabled = !has || genIndex >= generated.count - 1;
 
   if (!generated) {
-    els.genLabel.textContent = "No schedules yet — pick classes and Generate.";
+    els.genLabel.textContent = "Add classes and set preferences to see schedules.";
     renderCalendar(DAYS.map(() => []));
     els.genSummary.replaceChildren();
     els.calNote.textContent = "";
@@ -427,7 +434,7 @@ function generate() {
   if (courses.length === 0) {
     generated = null;
     genIndex = 0;
-    els.genLabel.textContent = "Add at least one course, then Generate.";
+    els.genLabel.textContent = "Add a course to generate schedules.";
     renderGenerated();
     return;
   }
@@ -455,6 +462,7 @@ function renderSelection() {
     inc.addEventListener("change", () => {
       entry.included = inc.checked;
       saveState();
+      requestGenerate();
     });
     const label = document.createElement("span");
     label.className = "sel-label";
@@ -472,6 +480,7 @@ function renderSelection() {
       renderSelection();
       syncAddButtons();
       saveState();
+      requestGenerate();
     });
     row.append(inc, dot, label, rm);
     els.selection.appendChild(row);
@@ -500,6 +509,7 @@ async function addCourse(course, btn) {
     renderSelection();
     syncAddButtons();
     saveState();
+    requestGenerate();
   } catch (err) {
     if (btn) {
       btn.textContent = "＋ Add";
@@ -609,7 +619,6 @@ els.form.addEventListener("submit", (e) => {
   runSearch();
 });
 els.loginBtn.addEventListener("click", () => sendToBackground({ type: "openTss" }).catch(() => {}));
-els.generate.addEventListener("click", generate);
 els.prev.addEventListener("click", () => {
   if (generated && genIndex > 0) {
     genIndex--;
@@ -623,6 +632,24 @@ els.next.addEventListener("click", () => {
   }
 });
 
+const debouncedGenerate = debounce(generate, 300);
+
+function requestGenerate() {
+  if (selection.size) els.genLabel.textContent = "Updating…";
+  debouncedGenerate();
+}
+
+for (const input of [els.spread, els.b2b, els.start, els.end, ...els.days]) {
+  input.addEventListener("change", () => {
+    saveState();
+    requestGenerate();
+  });
+  input.addEventListener("input", () => {
+    saveState();
+    requestGenerate();
+  });
+}
+
 function keepSessionAlive() {
   if (!sessionSeen || document.hidden) return;
   sendToBackground({ type: "tssFetch", url: `${SERVICE}/YUCSD_I_PERYRT_SOC?sap-client=500&$top=1` }).catch(() => {});
@@ -631,4 +658,4 @@ setInterval(keepSessionAlive, KEEPALIVE_MS);
 
 loadState();
 renderSelection();
-renderGenerated();
+requestGenerate();

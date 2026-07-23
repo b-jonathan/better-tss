@@ -9,10 +9,11 @@ TSS is a SAP S/4HANA + Student Lifecycle Management system fronted by SAPUI5/Fio
 Working prototype (verified against live TSS data). A Manifest V3 extension with a
 **3-panel auto-scheduler**: **left** = search + selected courses (include toggle,
 per-course option count); **middle** = the generated schedule on a weekly calendar
-with prev/next browsing and a match score; **right** = preferences + Generate.
+with prev/next browsing and a match score; **right** = preferences.
 
-Pick courses, set preferences, and it generates every conflict-free schedule ranked
-by fit. Each course's options come from `YUCSD_CON_EVENTS` (grouped by `EventPkgObjid`
+Pick courses and set preferences — schedules **regenerate automatically** (300 ms
+debounce, with an instant "Updating…" cue) as you change either, no button to press.
+It generates every conflict-free schedule ranked by fit. Each course's options come from `YUCSD_CON_EVENTS` (grouped by `EventPkgObjid`
 — the enrollable package = lecture + discussion + chosen lab), with real teaching-method
 badges (LE/DI/LA), room (from `Sched`), and seats. Reads only.
 
