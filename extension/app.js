@@ -2,7 +2,7 @@ const SERVICE =
   "https://tss.ucsd.edu/sap/opu/odata4/sap/yucsd_con_module_sb/srvd/sap/yucsd_con_module_servicedef/0001";
 const COURSE_ENTITY = "YUCSD_CON_MODULE";
 const SCHED_ENTITY = "YUCSD_CON_MODULE_SCHED";
-const INSTR_ENTITY = "YUCSD_CON_MODULE_INSTR";
+const EVENTS_ENTITY = "YUCSD_CON_EVENTS";
 const COURSE_SELECT =
   "CourseAbbr,CourseTitle,DepartmentAbbr,DepartmentText,CreditsDisplay,AcademicLevel,ModuleID,AcademicYear,AcademicPeriod";
 const PAGE_SIZE = 50;
@@ -33,23 +33,15 @@ function colorFor(code) {
   return courseColor.get(code);
 }
 
-function familyLetter(sectionId) {
-  const m = String(sectionId).match(/^[A-Za-z]+/);
-  return m ? m[0].toUpperCase() : String(sectionId);
+function methodRank(method) {
+  return { LE: 0, DI: 1, LA: 2 }[method] ?? 3;
 }
 
-function isLecture(sectionId) {
-  return /0\s*$/.test(String(sectionId)) && /00\s*$/.test(String(sectionId));
-}
-
-function methodLabel(sectionId) {
-  return isLecture(sectionId) ? "LE" : "DI";
-}
-
-function methodBadge(method, small) {
+function methodBadge(method) {
+  const cls = method === "LE" ? "le" : method === "LA" ? "la" : "di";
   const b = document.createElement("span");
-  b.className = `method-badge ${method === "LE" ? "le" : "di"}${small ? " small" : ""}`;
-  b.textContent = method;
+  b.className = `method-badge ${cls}`;
+  b.textContent = method || "—";
   return b;
 }
 
@@ -128,79 +120,97 @@ function parseDays(text) {
   const fullHits = Object.keys(full).filter((name) => lower.includes(name));
   if (fullHits.length) return [...new Set(fullHits.map((n) => full[n]))];
 
-  const cleaned = lower.replace(/[^a-z]/g, "");
-  const two = { su: 6, sa: 5, tu: 1, th: 3, mo: 0, we: 2, fr: 4 };
-  const one = { m: 0, t: 1, w: 2, f: 4, s: 5, u: 6, r: 3 };
-  const days = new Set();
-  let i = 0;
-  while (i < cleaned.length) {
-    const pair = cleaned.slice(i, i + 2);
-    const single = cleaned.slice(i, i + 1);
-    if (two[pair] !== undefined) {
-      days.add(two[pair]);
-      i += 2;
-    } else if (one[single] !== undefined) {
-      days.add(one[single]);
-      i += 1;
-    } else {
-      i += 1;
-    }
-  }
-  if (days.size) return [...days];
-
   const num = parseInt(text, 10);
   if (!Number.isNaN(num) && num >= 1 && num <= 7) return [num - 1];
   return [];
 }
 
-function groupSections(schedRows, instructorNames) {
-  const bySection = new Map();
-  for (const row of schedRows) {
-    const id = row.SectionId || "—";
-    if (!bySection.has(id)) {
-      bySection.set(id, { sectionId: id, method: methodLabel(id), meetings: [] });
-    }
+function firstSchedLine(sched) {
+  return sched ? String(sched).split("\n")[0].trim() : "";
+}
+
+function schedMeetings(rows) {
+  const bySid = new Map();
+  for (const row of rows) {
+    const sid = row.SectionId;
+    if (!sid) continue;
     const startMin = toMinutes(row.BeginTime);
     const endMin = toMinutes(row.EndTime);
-    bySection.get(id).meetings.push({
-      daysText: row.DoWText || row.DoW || "",
+    if (!bySid.has(sid)) bySid.set(sid, []);
+    bySid.get(sid).push({
+      daysText: row.DoWText || "",
       dayIndices: parseDays(row.DoWText || row.DoW),
       startMin,
       endMin,
       timeLabel:
-        startMin !== null && endMin !== null
+        startMin != null && endMin != null
           ? `${formatMinutes(startMin)}–${formatMinutes(endMin)}`
           : "TBA",
     });
   }
-  const sections = [...bySection.values()];
-  const instructors = [...new Set(instructorNames)].join(", ");
-  for (const s of sections) s.instructors = instructors;
-  return sections;
+  return bySid;
 }
 
-function buildFamilies(sections) {
-  const fams = new Map();
-  for (const s of sections) {
-    const letter = familyLetter(s.sectionId);
-    if (!fams.has(letter)) fams.set(letter, { letter, lecture: null, subs: [] });
-    const fam = fams.get(letter);
-    if (isLecture(s.sectionId) && !fam.lecture) fam.lecture = s;
-    else fam.subs.push(s);
+function dedupeByObj(events) {
+  const seen = new Set();
+  const out = [];
+  for (const e of events) {
+    if (seen.has(e.obj)) continue;
+    seen.add(e.obj);
+    out.push(e);
   }
-  for (const fam of fams.values()) {
-    if (!fam.lecture && fam.subs.length) fam.lecture = fam.subs.shift();
-  }
-  return [...fams.values()];
+  return out;
 }
 
-async function loadFamilies(moduleId) {
-  const [schedRows, instrRows] = await Promise.all([
+async function loadPackages(moduleId) {
+  const [events, schedRows] = await Promise.all([
+    fetchOData(buildByModuleUrl(EVENTS_ENTITY, moduleId)),
     fetchOData(buildByModuleUrl(SCHED_ENTITY, moduleId)),
-    fetchOData(buildByModuleUrl(INSTR_ENTITY, moduleId)),
   ]);
-  const sections = groupSections(schedRows, instrRows.map((r) => r.InstructorName).filter(Boolean));
-  return buildFamilies(sections);
+  const meetingsBySid = schedMeetings(schedRows);
+
+  const pkgMap = new Map();
+  for (const e of events) {
+    const pkgId = e.EventPkgObjid;
+    if (!pkgId) continue;
+    if (!pkgMap.has(pkgId)) {
+      pkgMap.set(pkgId, {
+        pkgId,
+        pkgText: e.EventPkgText || pkgId,
+        seats: { avail: e.EventPkgSeatsAvailable, limit: e.EventPkgLimit, wl: e.EventPkgNumOnWaitl },
+        events: [],
+        objs: new Set(),
+      });
+    }
+    const pk = pkgMap.get(pkgId);
+    if (pk.objs.has(e.EventObjid)) continue;
+    pk.objs.add(e.EventObjid);
+    pk.events.push({
+      obj: e.EventObjid,
+      method: e.TeachingMethod || "",
+      schedLine: firstSchedLine(e.Sched),
+      instr: e.InstructorName || "",
+      meetings: meetingsBySid.get(e.EventObjid) || [],
+    });
+  }
+
+  const packages = [...pkgMap.values()];
+  const total = packages.length;
+  const objCount = new Map();
+  for (const p of packages) for (const o of p.objs) objCount.set(o, (objCount.get(o) || 0) + 1);
+  const sharedObjs = new Set(
+    total > 1 ? [...objCount].filter(([, c]) => c === total).map(([o]) => o) : [],
+  );
+
+  const byMethod = (a, b) => methodRank(a.method) - methodRank(b.method);
+  const fixed = sharedObjs.size
+    ? dedupeByObj(packages.flatMap((p) => p.events).filter((e) => sharedObjs.has(e.obj))).sort(byMethod)
+    : [];
+  for (const p of packages) {
+    p.variant = p.events.filter((e) => !sharedObjs.has(e.obj)).sort(byMethod);
+    p.events.sort(byMethod);
+  }
+  return { fixed, packages };
 }
 
 const els = {
@@ -237,37 +247,40 @@ function showBanner(show) {
   els.banner.hidden = !show;
 }
 
-function groupKey(moduleId, letter) {
-  return `${moduleId}:${letter}`;
+function pkgKey(moduleId, pkgId) {
+  return `${moduleId}:${pkgId}`;
 }
 
-function partsOf(entry) {
-  return [entry.lecture, entry.sub].filter(Boolean);
+function seatText(seats) {
+  if (!seats || seats.limit == null) return "";
+  const avail = seats.avail == null ? "?" : seats.avail;
+  let t = `${avail}/${seats.limit} seats`;
+  if (seats.wl) t += ` · ${seats.wl} waitlisted`;
+  return t;
 }
 
 function placedBlocks() {
   const perDay = DAYS.map(() => []);
   const unplaced = [];
   for (const entry of schedule.values()) {
-    for (const part of partsOf(entry)) {
-      const label = `${entry.course.CourseAbbr ?? ""} ${part.sectionId}`.trim();
-      for (const meeting of part.meetings) {
-        if (meeting.startMin === null || meeting.endMin === null || meeting.dayIndices.length === 0) {
-          unplaced.push(`${label} (${meeting.daysText || "TBA"} ${meeting.timeLabel})`);
+    for (const ev of entry.events) {
+      const label = `${entry.course.CourseAbbr ?? ""} ${ev.method}`.trim();
+      for (const m of ev.meetings) {
+        if (m.startMin == null || m.endMin == null || m.dayIndices.length === 0) {
+          unplaced.push(`${label} (${m.daysText || "TBA"} ${m.timeLabel})`);
           continue;
         }
-        for (const dayIdx of meeting.dayIndices) {
-          if (dayIdx >= DAYS.length) {
-            unplaced.push(`${label} (${meeting.daysText})`);
+        for (const d of m.dayIndices) {
+          if (d >= DAYS.length) {
+            unplaced.push(`${label} (${m.daysText})`);
             continue;
           }
-          perDay[dayIdx].push({
+          perDay[d].push({
             label,
-            method: part.method,
             color: entry.color,
-            startMin: meeting.startMin,
-            endMin: meeting.endMin,
-            timeLabel: meeting.timeLabel,
+            startMin: m.startMin,
+            endMin: m.endMin,
+            timeLabel: m.timeLabel,
           });
         }
       }
@@ -324,7 +337,7 @@ function renderCalendar() {
       el.style.height = `${(block.endMin - block.startMin) * PX_PER_MIN}px`;
       el.style.background = block.color;
       const name = document.createElement("strong");
-      name.textContent = `${block.label} ${block.method}`;
+      name.textContent = block.label;
       const time = document.createElement("span");
       time.textContent = block.timeLabel;
       el.append(name, time);
@@ -337,14 +350,25 @@ function renderCalendar() {
     schedule.size === 0
       ? "Add classes above to see them here."
       : unplaced.length
-        ? `Not shown (weekend or no time): ${unplaced.join("; ")}`
+        ? `Not shown (weekend or no set time): ${unplaced.join("; ")}`
         : "";
 }
 
-function meetingSummary(part) {
-  return part.meetings
-    .map((m) => `${m.daysText || "TBA"} ${m.timeLabel}`.trim())
-    .join(", ");
+function eventRow(ev) {
+  const row = document.createElement("div");
+  row.className = "event-row";
+  row.appendChild(methodBadge(ev.method));
+  const sched = document.createElement("span");
+  sched.className = "event-sched";
+  sched.textContent = ev.schedLine || "TBA";
+  row.appendChild(sched);
+  if (ev.instr) {
+    const instr = document.createElement("span");
+    instr.className = "event-instr";
+    instr.textContent = ev.instr;
+    row.appendChild(instr);
+  }
+  return row;
 }
 
 function renderScheduleList() {
@@ -368,7 +392,8 @@ function renderScheduleList() {
     title.textContent = `${entry.course.CourseAbbr ?? ""} — ${entry.course.CourseTitle ?? ""}`;
     const units = document.createElement("span");
     units.className = "sched-units";
-    units.textContent = `${entry.course.CreditsDisplay ?? "?"} units`;
+    const seats = seatText(entry.seats);
+    units.textContent = `${entry.course.CreditsDisplay ?? "?"} units${seats ? ` · ${seats}` : ""}`;
     const rm = document.createElement("button");
     rm.type = "button";
     rm.className = "rm-btn";
@@ -381,22 +406,7 @@ function renderScheduleList() {
     head.append(title, units, rm);
     card.appendChild(head);
 
-    for (const part of partsOf(entry)) {
-      const line = document.createElement("div");
-      line.className = "sched-part";
-      const badge = methodBadge(part.method);
-      const code = document.createElement("span");
-      code.className = "sched-sec";
-      code.textContent = part.sectionId;
-      const meet = document.createElement("span");
-      meet.className = "sched-meet";
-      meet.textContent = meetingSummary(part) || "TBA";
-      const instr = document.createElement("span");
-      instr.className = "sched-instr";
-      instr.textContent = part.instructors || "";
-      line.append(badge, code, meet, instr);
-      card.appendChild(line);
-    }
+    for (const ev of entry.events) card.appendChild(eventRow(ev));
     els.scheduleList.appendChild(card);
   }
 }
@@ -414,17 +424,19 @@ function syncAddButtons() {
   });
 }
 
-function addFamily(course, family, subId) {
-  const key = groupKey(course.ModuleID, family.letter);
+function addPackage(course, pkg, fixed) {
+  const key = pkgKey(course.ModuleID, pkg.pkgId);
   if (schedule.has(key)) {
     schedule.delete(key);
   } else {
-    const sub = family.subs.find((s) => s.sectionId === subId) || null;
+    const events = fixed.length ? [...fixed, ...pkg.variant] : pkg.events;
     schedule.set(key, {
       key,
       course,
-      lecture: family.lecture,
-      sub,
+      pkgId: pkg.pkgId,
+      pkgText: pkg.pkgText,
+      seats: pkg.seats,
+      events,
       color: colorFor(course.CourseAbbr ?? key),
     });
   }
@@ -432,73 +444,59 @@ function addFamily(course, family, subId) {
   syncAddButtons();
 }
 
-function renderFamilies(host, course, families) {
+function renderPackages(host, course, data) {
   host.replaceChildren();
-  if (families.length === 0) {
+  if (!data.packages.length) {
     host.textContent = "No sections listed.";
     return;
   }
-  for (const family of families) {
-    const fam = document.createElement("div");
-    fam.className = "family";
 
-    const lectureLine = document.createElement("div");
-    lectureLine.className = "family-lecture";
-    if (family.lecture) {
-      const badge = methodBadge(family.lecture.method);
-      const code = document.createElement("span");
-      code.className = "sched-sec";
-      code.textContent = family.lecture.sectionId;
-      const meet = document.createElement("span");
-      meet.className = "sched-meet";
-      meet.textContent = meetingSummary(family.lecture) || "TBA";
-      const instr = document.createElement("span");
-      instr.className = "sched-instr";
-      instr.textContent = family.lecture.instructors || "";
-      lectureLine.append(badge, code, meet, instr);
+  if (data.fixed.length) {
+    const fixed = document.createElement("div");
+    fixed.className = "fixed-events";
+    const label = document.createElement("div");
+    label.className = "fixed-label";
+    label.textContent = "All sections include:";
+    fixed.appendChild(label);
+    for (const ev of data.fixed) fixed.appendChild(eventRow(ev));
+    host.appendChild(fixed);
+  }
+
+  for (const pkg of data.packages) {
+    const row = document.createElement("div");
+    row.className = "pkg";
+
+    const evWrap = document.createElement("div");
+    evWrap.className = "pkg-events";
+    const list = data.fixed.length ? pkg.variant : pkg.events;
+    if (list.length === 0) {
+      const only = document.createElement("div");
+      only.className = "event-row";
+      const tag = document.createElement("span");
+      tag.className = "event-sched";
+      tag.textContent = pkg.pkgText;
+      only.appendChild(tag);
+      evWrap.appendChild(only);
     } else {
-      lectureLine.textContent = `Section group ${family.letter}`;
+      for (const ev of list) evWrap.appendChild(eventRow(ev));
     }
 
-    const controls = document.createElement("div");
-    controls.className = "family-controls";
-    const radioName = `${course.ModuleID}-${family.letter}`;
-    let selectedSub = family.subs[0]?.sectionId ?? null;
-
-    if (family.subs.length) {
-      family.subs.forEach((sub, idx) => {
-        const opt = document.createElement("label");
-        opt.className = "sub-opt";
-        const radio = document.createElement("input");
-        radio.type = "radio";
-        radio.name = radioName;
-        radio.value = sub.sectionId;
-        if (idx === 0) radio.checked = true;
-        radio.addEventListener("change", () => {
-          selectedSub = sub.sectionId;
-        });
-        const text = document.createElement("span");
-        const badge = methodBadge(sub.method, true);
-        text.append(badge, document.createTextNode(` ${sub.sectionId} · ${meetingSummary(sub) || "TBA"}`));
-        opt.append(radio, text);
-        controls.appendChild(opt);
-      });
-    }
+    const seats = document.createElement("div");
+    seats.className = "pkg-seats";
+    seats.textContent = seatText(pkg.seats);
 
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "add-btn";
-    const key = groupKey(course.ModuleID, family.letter);
+    const key = pkgKey(course.ModuleID, pkg.pkgId);
     addBtn.dataset.key = key;
-    const isAdded = schedule.has(key);
-    addBtn.textContent = isAdded ? "✓ Added" : "＋ Add";
-    if (isAdded) addBtn.classList.add("added");
-    addBtn.addEventListener("click", () => addFamily(course, family, selectedSub));
+    const added = schedule.has(key);
+    addBtn.textContent = added ? "✓ Added" : "＋ Add";
+    if (added) addBtn.classList.add("added");
+    addBtn.addEventListener("click", () => addPackage(course, pkg, data.fixed));
 
-    fam.append(lectureLine);
-    if (family.subs.length) fam.append(controls);
-    fam.append(addBtn);
-    host.appendChild(fam);
+    row.append(evWrap, seats, addBtn);
+    host.appendChild(row);
   }
 }
 
@@ -537,8 +535,8 @@ function renderCourses(courses) {
       if (!opening || loaded) return;
       detail.textContent = "Loading sections…";
       try {
-        const families = await loadFamilies(course.ModuleID);
-        renderFamilies(detail, course, families);
+        const data = await loadPackages(course.ModuleID);
+        renderPackages(detail, course, data);
         loaded = true;
       } catch (err) {
         if (err instanceof SessionExpiredError) {
