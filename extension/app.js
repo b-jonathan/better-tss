@@ -89,9 +89,15 @@ function sendToBackground(message) {
   });
 }
 
-async function fetchOData(url) {
+async function fetchOData(url, allowReauth = true) {
   const { status, body } = await sendToBackground({ type: "tssFetch", url });
-  if (status === 401 || isLoginRedirect(body || "")) throw new SessionExpiredError();
+  if (status === 401 || isLoginRedirect(body || "")) {
+    if (allowReauth) {
+      const res = await sendToBackground({ type: "silentReauth" });
+      if (res && res.ok) return fetchOData(url, false);
+    }
+    throw new SessionExpiredError();
+  }
   if (status === 0) throw new TssUnavailableError(body || "no network response");
   if (status >= 500) throw new TssUnavailableError(`TSS returned ${status}`);
   if (status < 200 || status >= 300) throw new Error(`TSS returned ${status}`);
