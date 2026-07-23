@@ -64,18 +64,45 @@ function instructorsOf(entry) {
   return [...set];
 }
 
-function sectionsOf(entry) {
-  const seen = new Set();
-  const out = [];
-  for (const opt of entry.options || []) {
+function classifySections(entry) {
+  const opts = entry.options || [];
+  const total = opts.length;
+  const count = new Map();
+  const byKey = new Map();
+  for (const opt of opts) {
+    const seen = new Set();
     for (const ev of opt.meta.events) {
-      const key = `${ev.method}|${ev.schedLine}`;
+      const key = `${ev.method}|${ev.abbr}|${ev.schedLine}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push(ev);
+      count.set(key, (count.get(key) || 0) + 1);
+      if (!byKey.has(key)) byKey.set(key, ev);
     }
   }
-  return out.sort((a, b) => methodRank(a.method) - methodRank(b.method));
+  const fixed = [];
+  const options = [];
+  for (const [key, ev] of byKey) {
+    (total > 1 && count.get(key) === total ? fixed : options).push(ev);
+  }
+  const byMethod = (a, b) => methodRank(a.method) - methodRank(b.method);
+  return { fixed: fixed.sort(byMethod), options: options.sort(byMethod) };
+}
+
+function sectionRow(ev) {
+  const row = document.createElement("div");
+  row.className = "event-row";
+  row.appendChild(methodBadge(ev.method));
+  if (ev.abbr) {
+    const code = document.createElement("span");
+    code.className = "sec-code";
+    code.textContent = ev.abbr;
+    row.appendChild(code);
+  }
+  const s = document.createElement("span");
+  s.className = "event-sched";
+  s.textContent = ev.schedLine || "TBA";
+  row.appendChild(s);
+  return row;
 }
 
 function buildCourseUrl({ query, year, term }) {
@@ -213,6 +240,7 @@ async function loadPackages(moduleId) {
     pk.objs.add(e.EventObjid);
     pk.events.push({
       method: e.TeachingMethod || "",
+      abbr: e.EventAbbr || "",
       schedLine: firstSchedLine(e.Sched),
       instr: e.InstructorName || "",
       meetings: meetingsBySid.get(e.EventObjid) || [],
@@ -272,7 +300,7 @@ function buildOptions(course, data) {
         pkgText: pkg.pkgText,
         seats: pkg.seats,
         courseAbbr: course.CourseAbbr,
-        events: events.map((ev) => ({ method: ev.method, schedLine: ev.schedLine, instr: ev.instr, meetings: ev.meetings })),
+        events: events.map((ev) => ({ method: ev.method, abbr: ev.abbr, schedLine: ev.schedLine, instr: ev.instr, meetings: ev.meetings })),
       },
     };
   });
@@ -413,16 +441,7 @@ function renderGenSummary(chosen) {
       meta.seats && meta.seats.limit != null ? `${meta.seats.avail ?? "?"}/${meta.seats.limit} seats` : "";
     head.append(title, seats);
     card.appendChild(head);
-    for (const ev of meta.events) {
-      const row = document.createElement("div");
-      row.className = "event-row";
-      row.appendChild(methodBadge(ev.method));
-      const s = document.createElement("span");
-      s.className = "event-sched";
-      s.textContent = ev.schedLine || "TBA";
-      row.appendChild(s);
-      card.appendChild(row);
-    }
+    for (const ev of meta.events) card.appendChild(sectionRow(ev));
     els.genSummary.appendChild(card);
   }
 }
@@ -542,15 +561,23 @@ function renderSelection() {
       ins.textContent = `Instructors: ${instrs.join(", ")}`;
       detail.appendChild(ins);
     }
-    for (const ev of sectionsOf(entry)) {
-      const row = document.createElement("div");
-      row.className = "event-row";
-      row.appendChild(methodBadge(ev.method));
-      const s = document.createElement("span");
-      s.className = "event-sched";
-      s.textContent = ev.schedLine || "TBA";
-      row.appendChild(s);
-      detail.appendChild(row);
+    const { fixed, options } = classifySections(entry);
+    if (fixed.length) {
+      const lbl = document.createElement("div");
+      lbl.className = "sec-group-label";
+      lbl.textContent = "In every section";
+      detail.appendChild(lbl);
+      for (const ev of fixed) detail.appendChild(sectionRow(ev));
+    }
+    if (options.length) {
+      const lbl = document.createElement("div");
+      lbl.className = "sec-group-label";
+      lbl.textContent = `Options · choose ${options.length}`;
+      detail.appendChild(lbl);
+      const box = document.createElement("div");
+      box.className = "sec-options";
+      for (const ev of options) box.appendChild(sectionRow(ev));
+      detail.appendChild(box);
     }
 
     head.addEventListener("click", () => {
