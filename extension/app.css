@@ -298,6 +298,35 @@ input[type="time"] {
   font-size: 0.78rem;
 }
 
+.sec-group-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 8px 0 3px;
+}
+
+.sec-options {
+  background: #f1f6fb;
+  border: 1px solid #dbe7f1;
+  border-radius: 8px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sec-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  color: var(--muted);
+  background: #eef1f4;
+  border-radius: 4px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
 .course-dot {
   width: 10px;
   height: 10px;
