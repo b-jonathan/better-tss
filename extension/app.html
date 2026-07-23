@@ -60,12 +60,17 @@
 
       <div class="schedule-head">
         <h2>Your schedule</h2>
+        <div class="view-toggle" role="group" aria-label="Schedule view">
+          <button id="view-list" class="seg active" type="button">List</button>
+          <button id="view-cal" class="seg" type="button">Calendar</button>
+        </div>
         <button id="clear-cal" class="ghost-btn" type="button">Clear</button>
       </div>
       <div id="schedule-list" class="schedule-list"></div>
-
-      <div id="calendar" class="calendar"></div>
-      <p id="cal-note" class="cal-note"></p>
+      <div id="cal-wrap" hidden>
+        <div id="calendar" class="calendar"></div>
+        <p id="cal-note" class="cal-note"></p>
+      </div>
     </main>
 
     <script src="app.js"></script>

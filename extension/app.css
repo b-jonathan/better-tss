@@ -323,14 +323,42 @@ button {
 
 .schedule-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 10px;
 }
 
 .schedule-head h2 {
   margin: 0;
   font-size: 1.15rem;
+}
+
+.view-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.seg {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.seg + .seg {
+  border-left: 1px solid var(--line);
+}
+
+.seg.active {
+  background: var(--blue);
+  color: #fff;
 }
 
 .ghost-btn {

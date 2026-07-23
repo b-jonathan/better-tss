@@ -205,7 +205,18 @@ const els = {
   calNote: document.getElementById("cal-note"),
   clearCal: document.getElementById("clear-cal"),
   scheduleList: document.getElementById("schedule-list"),
+  calWrap: document.getElementById("cal-wrap"),
+  viewList: document.getElementById("view-list"),
+  viewCal: document.getElementById("view-cal"),
 };
+
+function setView(name) {
+  els.viewList.classList.toggle("active", name === "list");
+  els.viewCal.classList.toggle("active", name === "cal");
+  els.scheduleList.hidden = name !== "list";
+  els.calWrap.hidden = name !== "cal";
+  if (name === "cal") renderCalendar();
+}
 
 function setStatus(text) {
   els.status.textContent = text;
@@ -585,4 +596,8 @@ els.clearCal.addEventListener("click", () => {
   syncAddButtons();
 });
 
+els.viewList.addEventListener("click", () => setView("list"));
+els.viewCal.addEventListener("click", () => setView("cal"));
+
 renderSchedule();
+setView("list");
