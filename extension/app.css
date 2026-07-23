@@ -226,44 +226,58 @@ button {
   gap: 10px;
 }
 
-.family {
+.fixed-events {
+  padding: 10px 14px;
+  background: #eef4f8;
+  border-radius: 10px;
+}
+
+.fixed-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.pkg {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
-  gap: 10px 16px;
-  padding: 12px 14px;
+  gap: 8px 16px;
+  padding: 10px 14px;
   background: var(--bg);
   border-radius: 10px;
 }
 
-.family-lecture {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.family-controls {
-  grid-column: 1;
+.pkg-events {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
-.sub-opt {
+.event-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.85rem;
+  flex-wrap: wrap;
   color: var(--ink);
-  cursor: pointer;
+  font-size: 0.86rem;
+}
+
+.event-instr {
+  color: var(--muted);
+}
+
+.pkg-seats {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: right;
 }
 
 .add-btn {
-  grid-column: 2;
-  grid-row: 1 / span 2;
   align-self: center;
   padding: 7px 16px;
   font-size: 0.82rem;
@@ -301,9 +315,8 @@ button {
   background: var(--di);
 }
 
-.method-badge.small {
-  font-size: 0.6rem;
-  padding: 1px 5px;
+.method-badge.la {
+  background: #7c3aed;
 }
 
 .sched-sec {

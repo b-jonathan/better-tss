@@ -6,25 +6,26 @@ TSS is a SAP S/4HANA + Student Lifecycle Management system fronted by SAPUI5/Fio
 
 ## Status
 
-Early prototype. A Manifest V3 extension that opens a full-page planner and
-searches the TSS course catalog. Each course expands into **section groups**
-(a lecture plus its discussion/lab options); pick a discussion and **Add** the
-whole group in one click, with a **teaching-method badge** (LE/DI) on each part.
-Added groups appear in the schedule list and on a **weekly calendar** below,
-plotted by day and start/end time with per-course colors and conflict highlighting.
-Reads only.
+Working prototype (verified against live TSS data). A Manifest V3 extension that
+opens a full-page planner and searches the TSS course catalog. Each course expands
+into its **enrollable packages** (from `YUCSD_CON_EVENTS`, grouped by `EventPkgObjid`):
+the **shared lecture + discussion are shown once** ("All sections include…", not
+clickable), and the varying discussion/lab options are listed with **real teaching-method
+badges (LE/DI/LA)**, **building/room** (from the `Sched` string), and **seats**
+(`EventPkgSeatsAvailable`/`Limit`/waitlist). **Add** pulls a whole package — lecture +
+discussion + chosen lab — onto the schedule. Added packages show in a **List** or
+**Calendar** view (toggle), the calendar plotted by day and start/end time (joined
+from `SCHED` via `EventObjid` = `SectionId`) with per-course colors and conflict
+highlighting. Reads only.
 
-Provisional / needs live verification against TSS (every data probe has timed out
-so far — TSS has been down):
-- **Section grouping** assumes the legacy `A00`/`A01` code convention (family =
-  leading letter, lecture = code ending in `00`). Unrecognized formats fall back
-  to per-section add, so nothing breaks — but this needs one real `SCHED` sample
-  to confirm the new system's format.
-- **Teaching method** (LE/DI) is *inferred* from the section code, not read from a
-  real field yet; LA and other types can't be distinguished until the field is found.
-- **Seats and building/room** aren't wired (`YUCSD_CON_MODULE_DATA`/`_BLDG`/`_LOC`).
-- The **day-of-week parser** (`parseDays`) is defensive across several `DoWText`
-  formats; calibrate once a live sample confirms the actual format. Grid is Mon–Fri.
+### Data model notes
+- **`YUCSD_CON_EVENTS`** is the section source of truth: `TeachingMethod` (LE/DI/LA),
+  `EventPkgObjid` (the enrollable "section number"), `Sched` (formatted day/time/room),
+  seat fields. `EventObjid` joins to `SCHED.SectionId` for structured calendar times.
+- Grouping is package-based: events present in *every* package are treated as the
+  fixed lecture/discussion; the rest are the selectable options. Falls back to showing
+  each package's full event list when nothing is shared (e.g. multi-lecture courses).
+- Calendar grid is Mon–Fri; weekend/no-time meetings are listed under the grid instead.
 
 - [`extension/`](extension/) — the unpacked MV3 extension.
 - [`docs/tss-client-spec.md`](docs/tss-client-spec.md) — system architecture, auth model, full OData endpoint/entity catalog, client design, and read-vs-write feasibility.
