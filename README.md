@@ -6,17 +6,27 @@ TSS is a SAP S/4HANA + Student Lifecycle Management system fronted by SAPUI5/Fio
 
 ## Status
 
-Working prototype (verified against live TSS data). A Manifest V3 extension that
-opens a full-page planner and searches the TSS course catalog. Each course expands
-into its **enrollable packages** (from `YUCSD_CON_EVENTS`, grouped by `EventPkgObjid`):
-the **shared lecture + discussion are shown once** ("All sections include…", not
-clickable), and the varying discussion/lab options are listed with **real teaching-method
-badges (LE/DI/LA)**, **building/room** (from the `Sched` string), and **seats**
-(`EventPkgSeatsAvailable`/`Limit`/waitlist). **Add** pulls a whole package — lecture +
-discussion + chosen lab — onto the schedule. Added packages show in a **List** or
-**Calendar** view (toggle), the calendar plotted by day and start/end time (joined
-from `SCHED` via `EventObjid` = `SectionId`) with per-course colors and conflict
-highlighting. Reads only.
+Working prototype (verified against live TSS data). A Manifest V3 extension with a
+**3-panel auto-scheduler**: **left** = search + selected courses (include toggle,
+per-course option count); **middle** = the generated schedule on a weekly calendar
+with prev/next browsing and a match score; **right** = preferences + Generate.
+
+Pick courses, set preferences, and it generates every conflict-free schedule ranked
+by fit. Each course's options come from `YUCSD_CON_EVENTS` (grouped by `EventPkgObjid`
+— the enrollable package = lecture + discussion + chosen lab), with real teaching-method
+badges (LE/DI/LA), room (from `Sched`), and seats. Reads only.
+
+### Auto-scheduler
+- **Exact enumeration, not Monte Carlo.** Backtracking DFS picks one package per course
+  and prunes any partial selection with a time clash the instant it appears (courses
+  ordered fewest-options-first to prune hardest; excluded time slots seeded as busy
+  blocks). Deterministic, finds the true optimum, and typically milliseconds for a normal
+  course load. Capped at 500 kept schedules + a step budget so it can't blow up. Lives in
+  [`extension/scheduler.js`](extension/scheduler.js) as a pure, node-testable module.
+- **Fitness** is a normalized weighted average of only the *active* preferences, each in
+  [0,1]: preferred time-window fit, preferred-days fit, avoid-back-to-back (<15-min gaps),
+  and spread/compactness (gap-ratio based — compact rewards low idle time + fewer days on
+  campus; spread-out rewards the opposite; neutral ignores it).
 
 ### Data model notes
 - **`YUCSD_CON_EVENTS`** is the section source of truth: `TeachingMethod` (LE/DI/LA),

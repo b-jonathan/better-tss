@@ -4,27 +4,29 @@ const COURSE_ENTITY = "YUCSD_CON_MODULE";
 const SCHED_ENTITY = "YUCSD_CON_MODULE_SCHED";
 const EVENTS_ENTITY = "YUCSD_CON_EVENTS";
 const COURSE_SELECT =
-  "CourseAbbr,CourseTitle,DepartmentAbbr,DepartmentText,CreditsDisplay,AcademicLevel,ModuleID,AcademicYear,AcademicPeriod";
+  "CourseAbbr,CourseTitle,DepartmentAbbr,CreditsDisplay,ModuleID,AcademicYear,AcademicPeriod";
 const PAGE_SIZE = 50;
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const DAY_START_MIN = 7 * 60;
 const DAY_END_MIN = 22 * 60;
-const PX_PER_MIN = 0.8;
+const PX_PER_MIN = 0.7;
 const GRID_HEIGHT = (DAY_END_MIN - DAY_START_MIN) * PX_PER_MIN;
 const COURSE_COLORS = [
   "#00629b", "#16a34a", "#db2777", "#d97706",
   "#7c3aed", "#0891b2", "#dc2626", "#4d7c0f",
 ];
 
+const KEEPALIVE_MS = 5 * 60 * 1000;
+const STORAGE_KEY = "better-tss.planner";
+
 class SessionExpiredError extends Error {}
 class TssUnavailableError extends Error {}
 
-const schedule = new Map();
+const selection = new Map();
 const courseColor = new Map();
-
-const KEEPALIVE_MS = 5 * 60 * 1000;
-const STORAGE_KEY = "better-tss.schedule";
+let generated = null;
+let genIndex = 0;
 let sessionSeen = false;
 
 function colorFor(code) {
@@ -32,10 +34,6 @@ function colorFor(code) {
     courseColor.set(code, COURSE_COLORS[courseColor.size % COURSE_COLORS.length]);
   }
   return courseColor.get(code);
-}
-
-function methodRank(method) {
-  return { LE: 0, DI: 1, LA: 2 }[method] ?? 3;
 }
 
 function methodBadge(method) {
@@ -65,11 +63,7 @@ function buildByModuleUrl(entity, moduleId) {
 }
 
 function isLoginRedirect(body) {
-  return (
-    /SAMLRequest/.test(body) ||
-    /idp\/profile\/SAML2/.test(body) ||
-    /tssproxy\.ucsd\.edu/.test(body)
-  );
+  return /SAMLRequest/.test(body) || /idp\/profile\/SAML2/.test(body) || /tssproxy\.ucsd\.edu/.test(body);
 }
 
 function sendToBackground(message) {
@@ -118,9 +112,8 @@ function parseDays(text) {
   if (!text) return [];
   const lower = String(text).toLowerCase();
   const full = { monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6 };
-  const fullHits = Object.keys(full).filter((name) => lower.includes(name));
-  if (fullHits.length) return [...new Set(fullHits.map((n) => full[n]))];
-
+  const hits = Object.keys(full).filter((name) => lower.includes(name));
+  if (hits.length) return [...new Set(hits.map((n) => full[n]))];
   const num = parseInt(text, 10);
   if (!Number.isNaN(num) && num >= 1 && num <= 7) return [num - 1];
   return [];
@@ -139,7 +132,6 @@ function schedMeetings(rows) {
     const endMin = toMinutes(row.EndTime);
     if (!bySid.has(sid)) bySid.set(sid, []);
     bySid.get(sid).push({
-      daysText: row.DoWText || "",
       dayIndices: parseDays(row.DoWText || row.DoW),
       startMin,
       endMin,
@@ -169,7 +161,6 @@ async function loadPackages(moduleId) {
     fetchOData(buildByModuleUrl(SCHED_ENTITY, moduleId)),
   ]);
   const meetingsBySid = schedMeetings(schedRows);
-
   const pkgMap = new Map();
   for (const e of events) {
     const pkgId = e.EventPkgObjid;
@@ -187,31 +178,70 @@ async function loadPackages(moduleId) {
     if (pk.objs.has(e.EventObjid)) continue;
     pk.objs.add(e.EventObjid);
     pk.events.push({
-      obj: e.EventObjid,
       method: e.TeachingMethod || "",
       schedLine: firstSchedLine(e.Sched),
       instr: e.InstructorName || "",
       meetings: meetingsBySid.get(e.EventObjid) || [],
     });
   }
-
   const packages = [...pkgMap.values()];
-  const total = packages.length;
   const objCount = new Map();
   for (const p of packages) for (const o of p.objs) objCount.set(o, (objCount.get(o) || 0) + 1);
-  const sharedObjs = new Set(
-    total > 1 ? [...objCount].filter(([, c]) => c === total).map(([o]) => o) : [],
-  );
-
-  const byMethod = (a, b) => methodRank(a.method) - methodRank(b.method);
-  const fixed = sharedObjs.size
-    ? dedupeByObj(packages.flatMap((p) => p.events).filter((e) => sharedObjs.has(e.obj))).sort(byMethod)
-    : [];
+  const shared = new Set(packages.length > 1 ? [...objCount].filter(([, c]) => c === packages.length).map(([o]) => o) : []);
+  const fixedObjs = [];
   for (const p of packages) {
-    p.variant = p.events.filter((e) => !sharedObjs.has(e.obj)).sort(byMethod);
-    p.events.sort(byMethod);
+    p.variant = [];
+    p.fixedEvents = [];
+    for (const ev of p.events) {
+      const o = [...p.objs][p.events.indexOf(ev)];
+      void o;
+    }
+  }
+  const fixed = shared.size
+    ? dedupeByObj(packages.flatMap((p) => p.events.map((ev, i) => ({ ...ev, obj: [...p.objs][i] })))
+        .filter((e) => shared.has(e.obj)))
+    : [];
+  void fixedObjs;
+  for (const p of packages) {
+    const withObj = p.events.map((ev, i) => ({ ...ev, obj: [...p.objs][i] }));
+    p.variant = withObj.filter((e) => !shared.has(e.obj));
   }
   return { fixed, packages };
+}
+
+function optionEvents(pkg, fixed) {
+  return fixed.length ? [...fixed, ...pkg.variant] : pkg.events;
+}
+
+function optionBlocks(events) {
+  const blocks = [];
+  for (const ev of events) {
+    for (const m of ev.meetings) {
+      if (m.startMin == null || m.endMin == null) continue;
+      for (const day of m.dayIndices) {
+        if (day >= DAYS.length) continue;
+        blocks.push({ day, start: m.startMin, end: m.endMin });
+      }
+    }
+  }
+  return blocks;
+}
+
+function buildOptions(course, data) {
+  return data.packages.map((pkg) => {
+    const events = optionEvents(pkg, data.fixed);
+    return {
+      id: pkg.pkgId,
+      blocks: optionBlocks(events),
+      meta: {
+        pkgId: pkg.pkgId,
+        pkgText: pkg.pkgText,
+        seats: pkg.seats,
+        courseAbbr: course.CourseAbbr,
+        events: events.map((ev) => ({ method: ev.method, schedLine: ev.schedLine, instr: ev.instr, meetings: ev.meetings })),
+      },
+    };
+  });
 }
 
 const els = {
@@ -221,24 +251,22 @@ const els = {
   term: document.getElementById("term"),
   status: document.getElementById("status"),
   results: document.getElementById("results"),
+  selection: document.getElementById("selection"),
   banner: document.getElementById("login-banner"),
   loginBtn: document.getElementById("login-btn"),
   calendar: document.getElementById("calendar"),
   calNote: document.getElementById("cal-note"),
-  clearCal: document.getElementById("clear-cal"),
-  scheduleList: document.getElementById("schedule-list"),
-  calWrap: document.getElementById("cal-wrap"),
-  viewList: document.getElementById("view-list"),
-  viewCal: document.getElementById("view-cal"),
+  genLabel: document.getElementById("gen-label"),
+  genSummary: document.getElementById("gen-summary"),
+  prev: document.getElementById("prev"),
+  next: document.getElementById("next"),
+  generate: document.getElementById("generate"),
+  spread: document.getElementById("pref-spread"),
+  b2b: document.getElementById("pref-b2b"),
+  start: document.getElementById("pref-start"),
+  end: document.getElementById("pref-end"),
+  days: [...document.querySelectorAll(".pref-days input")],
 };
-
-function setView(name) {
-  els.viewList.classList.toggle("active", name === "list");
-  els.viewCal.classList.toggle("active", name === "cal");
-  els.scheduleList.hidden = name !== "list";
-  els.calWrap.hidden = name !== "cal";
-  if (name === "cal") renderCalendar();
-}
 
 function setStatus(text) {
   els.status.textContent = text;
@@ -248,62 +276,22 @@ function showBanner(show) {
   els.banner.hidden = !show;
 }
 
-function pkgKey(moduleId, pkgId) {
-  return `${moduleId}:${pkgId}`;
+function readPrefs() {
+  const t = (v) => {
+    const [h, m] = v.split(":").map(Number);
+    return h * 60 + (m || 0);
+  };
+  return {
+    spread: els.spread.value,
+    avoidBackToBack: els.b2b.checked,
+    preferredStart: t(els.start.value || "08:00"),
+    preferredEnd: t(els.end.value || "22:00"),
+    preferredDays: els.days.filter((d) => d.checked).map((d) => Number(d.value)),
+  };
 }
 
-function seatText(seats) {
-  if (!seats || seats.limit == null) return "";
-  const avail = seats.avail == null ? "?" : seats.avail;
-  let t = `${avail}/${seats.limit} seats`;
-  if (seats.wl) t += ` · ${seats.wl} waitlisted`;
-  return t;
-}
-
-function placedBlocks() {
-  const perDay = DAYS.map(() => []);
-  const unplaced = [];
-  for (const entry of schedule.values()) {
-    for (const ev of entry.events) {
-      const label = `${entry.course.CourseAbbr ?? ""} ${ev.method}`.trim();
-      for (const m of ev.meetings) {
-        if (m.startMin == null || m.endMin == null || m.dayIndices.length === 0) {
-          unplaced.push(`${label} (${m.daysText || "TBA"} ${m.timeLabel})`);
-          continue;
-        }
-        for (const d of m.dayIndices) {
-          if (d >= DAYS.length) {
-            unplaced.push(`${label} (${m.daysText})`);
-            continue;
-          }
-          perDay[d].push({
-            label,
-            color: entry.color,
-            startMin: m.startMin,
-            endMin: m.endMin,
-            timeLabel: m.timeLabel,
-          });
-        }
-      }
-    }
-  }
-  for (const blocks of perDay) {
-    blocks.sort((a, b) => a.startMin - b.startMin);
-    for (let i = 0; i < blocks.length; i++) {
-      for (let j = i + 1; j < blocks.length; j++) {
-        if (blocks[j].startMin < blocks[i].endMin) {
-          blocks[i].conflict = true;
-          blocks[j].conflict = true;
-        }
-      }
-    }
-  }
-  return { perDay, unplaced };
-}
-
-function renderCalendar() {
+function renderCalendar(perDay) {
   els.calendar.replaceChildren();
-
   const corner = document.createElement("div");
   corner.className = "cal-corner";
   els.calendar.appendChild(corner);
@@ -313,7 +301,6 @@ function renderCalendar() {
     head.textContent = day;
     els.calendar.appendChild(head);
   }
-
   const axis = document.createElement("div");
   axis.className = "cal-timeaxis";
   axis.style.height = `${GRID_HEIGHT}px`;
@@ -326,14 +313,13 @@ function renderCalendar() {
   }
   els.calendar.appendChild(axis);
 
-  const { perDay, unplaced } = placedBlocks();
   for (const blocks of perDay) {
     const col = document.createElement("div");
     col.className = "cal-daycol";
     col.style.height = `${GRID_HEIGHT}px`;
     for (const block of blocks) {
       const el = document.createElement("div");
-      el.className = "cal-block" + (block.conflict ? " conflict" : "");
+      el.className = "cal-block";
       el.style.top = `${(block.startMin - DAY_START_MIN) * PX_PER_MIN}px`;
       el.style.height = `${(block.endMin - block.startMin) * PX_PER_MIN}px`;
       el.style.background = block.color;
@@ -346,241 +332,208 @@ function renderCalendar() {
     }
     els.calendar.appendChild(col);
   }
-
-  els.calNote.textContent =
-    schedule.size === 0
-      ? "Add classes above to see them here."
-      : unplaced.length
-        ? `Not shown (weekend or no set time): ${unplaced.join("; ")}`
-        : "";
 }
 
-function eventRow(ev) {
-  const row = document.createElement("div");
-  row.className = "event-row";
-  row.appendChild(methodBadge(ev.method));
-  const sched = document.createElement("span");
-  sched.className = "event-sched";
-  sched.textContent = ev.schedLine || "TBA";
-  row.appendChild(sched);
-  if (ev.instr) {
-    const instr = document.createElement("span");
-    instr.className = "event-instr";
-    instr.textContent = ev.instr;
-    row.appendChild(instr);
+function chosenToPerDay(chosen) {
+  const perDay = DAYS.map(() => []);
+  for (const pick of chosen) {
+    const meta = pick.option.meta;
+    const color = colorFor(meta.courseAbbr);
+    for (const ev of meta.events) {
+      for (const m of ev.meetings) {
+        if (m.startMin == null || m.endMin == null) continue;
+        for (const day of m.dayIndices) {
+          if (day >= DAYS.length) continue;
+          perDay[day].push({
+            label: `${meta.courseAbbr} ${ev.method}`,
+            color,
+            startMin: m.startMin,
+            endMin: m.endMin,
+            timeLabel: m.timeLabel,
+          });
+        }
+      }
+    }
   }
-  return row;
+  return perDay;
 }
 
-function renderScheduleList() {
-  els.scheduleList.replaceChildren();
-  if (schedule.size === 0) {
-    const empty = document.createElement("p");
-    empty.className = "empty-schedule";
-    empty.textContent = "Nothing added yet. Search above and add a class.";
-    els.scheduleList.appendChild(empty);
-    return;
-  }
-  for (const entry of schedule.values()) {
+function renderGenSummary(chosen) {
+  els.genSummary.replaceChildren();
+  for (const pick of chosen) {
+    const meta = pick.option.meta;
     const card = document.createElement("div");
     card.className = "sched-card";
-    card.style.borderLeftColor = entry.color;
-
+    card.style.borderLeftColor = colorFor(meta.courseAbbr);
     const head = document.createElement("div");
     head.className = "sched-card-head";
     const title = document.createElement("span");
     title.className = "sched-title";
-    title.textContent = `${entry.course.CourseAbbr ?? ""} — ${entry.course.CourseTitle ?? ""}`;
-    const units = document.createElement("span");
-    units.className = "sched-units";
-    const seats = seatText(entry.seats);
-    units.textContent = `${entry.course.CreditsDisplay ?? "?"} units${seats ? ` · ${seats}` : ""}`;
+    title.textContent = meta.courseAbbr;
+    const seats = document.createElement("span");
+    seats.className = "sched-units";
+    seats.textContent =
+      meta.seats && meta.seats.limit != null ? `${meta.seats.avail ?? "?"}/${meta.seats.limit} seats` : "";
+    head.append(title, seats);
+    card.appendChild(head);
+    for (const ev of meta.events) {
+      const row = document.createElement("div");
+      row.className = "event-row";
+      row.appendChild(methodBadge(ev.method));
+      const s = document.createElement("span");
+      s.className = "event-sched";
+      s.textContent = ev.schedLine || "TBA";
+      row.appendChild(s);
+      card.appendChild(row);
+    }
+    els.genSummary.appendChild(card);
+  }
+}
+
+function renderGenerated() {
+  const has = generated && generated.count > 0;
+  els.prev.disabled = !has || genIndex <= 0;
+  els.next.disabled = !has || genIndex >= generated.count - 1;
+
+  if (!generated) {
+    els.genLabel.textContent = "No schedules yet — pick classes and Generate.";
+    renderCalendar(DAYS.map(() => []));
+    els.genSummary.replaceChildren();
+    els.calNote.textContent = "";
+    return;
+  }
+  if (generated.count === 0) {
+    els.genLabel.textContent = "No conflict-free schedule found — loosen preferences or drop a class.";
+    renderCalendar(DAYS.map(() => []));
+    els.genSummary.replaceChildren();
+    els.calNote.textContent = "";
+    return;
+  }
+  const cur = generated.schedules[genIndex];
+  const more = generated.exhausted ? "" : "+";
+  els.genLabel.textContent = `Schedule ${genIndex + 1} of ${generated.count}${more} · match ${(cur.score * 100).toFixed(0)}%`;
+  renderCalendar(chosenToPerDay(cur.chosen));
+  renderGenSummary(cur.chosen);
+  els.calNote.textContent = "";
+}
+
+function generate() {
+  const courses = [];
+  for (const entry of selection.values()) {
+    if (entry.included && entry.options && entry.options.length) {
+      courses.push({ courseId: entry.course.ModuleID, options: entry.options });
+    }
+  }
+  if (courses.length === 0) {
+    generated = null;
+    genIndex = 0;
+    els.genLabel.textContent = "Add at least one course, then Generate.";
+    renderGenerated();
+    return;
+  }
+  generated = generateSchedules(courses, readPrefs(), { cap: 500 });
+  genIndex = 0;
+  renderGenerated();
+  saveState();
+}
+
+function renderSelection() {
+  els.selection.replaceChildren();
+  if (selection.size === 0) {
+    const p = document.createElement("p");
+    p.className = "empty-schedule";
+    p.textContent = "No courses selected. Search and add some.";
+    els.selection.appendChild(p);
+    return;
+  }
+  for (const entry of selection.values()) {
+    const row = document.createElement("div");
+    row.className = "sel-row";
+    const inc = document.createElement("input");
+    inc.type = "checkbox";
+    inc.checked = entry.included;
+    inc.addEventListener("change", () => {
+      entry.included = inc.checked;
+      saveState();
+    });
+    const label = document.createElement("span");
+    label.className = "sel-label";
+    const count = entry.options ? entry.options.length : 0;
+    label.textContent = `${entry.course.CourseAbbr} · ${count} option${count === 1 ? "" : "s"}`;
+    const dot = document.createElement("span");
+    dot.className = "course-dot";
+    dot.style.background = colorFor(entry.course.CourseAbbr);
     const rm = document.createElement("button");
     rm.type = "button";
     rm.className = "rm-btn";
-    rm.textContent = "Remove";
+    rm.textContent = "✕";
     rm.addEventListener("click", () => {
-      schedule.delete(entry.key);
-      commitSchedule();
+      selection.delete(entry.course.ModuleID);
+      renderSelection();
+      syncAddButtons();
+      saveState();
     });
-    head.append(title, units, rm);
-    card.appendChild(head);
-
-    for (const ev of entry.events) card.appendChild(eventRow(ev));
-    els.scheduleList.appendChild(card);
+    row.append(inc, dot, label, rm);
+    els.selection.appendChild(row);
   }
-}
-
-function renderSchedule() {
-  renderScheduleList();
-  renderCalendar();
-}
-
-function saveSchedule() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...schedule.values()]));
-  } catch {
-    return;
-  }
-}
-
-function loadSchedule() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    for (const entry of JSON.parse(raw)) {
-      if (!entry || !entry.key) continue;
-      schedule.set(entry.key, entry);
-      const code = entry.course?.CourseAbbr ?? entry.key;
-      if (entry.color) courseColor.set(code, entry.color);
-    }
-  } catch {
-    schedule.clear();
-  }
-}
-
-function commitSchedule() {
-  saveSchedule();
-  renderSchedule();
-  syncAddButtons();
 }
 
 function syncAddButtons() {
   document.querySelectorAll(".add-btn").forEach((btn) => {
-    const added = schedule.has(btn.dataset.key);
+    const added = selection.has(btn.dataset.id);
     btn.textContent = added ? "✓ Added" : "＋ Add";
     btn.classList.toggle("added", added);
+    btn.disabled = added;
   });
 }
 
-function addPackage(course, pkg, fixed) {
-  const key = pkgKey(course.ModuleID, pkg.pkgId);
-  if (schedule.has(key)) {
-    schedule.delete(key);
-  } else {
-    const events = fixed.length ? [...fixed, ...pkg.variant] : pkg.events;
-    schedule.set(key, {
-      key,
-      course,
-      pkgId: pkg.pkgId,
-      pkgText: pkg.pkgText,
-      seats: pkg.seats,
-      events,
-      color: colorFor(course.CourseAbbr ?? key),
-    });
+async function addCourse(course, btn) {
+  if (selection.has(course.ModuleID)) return;
+  if (btn) {
+    btn.textContent = "Loading…";
+    btn.disabled = true;
   }
-  commitSchedule();
-}
-
-function renderPackages(host, course, data) {
-  host.replaceChildren();
-  if (!data.packages.length) {
-    host.textContent = "No sections listed.";
-    return;
-  }
-
-  if (data.fixed.length) {
-    const fixed = document.createElement("div");
-    fixed.className = "fixed-events";
-    const label = document.createElement("div");
-    label.className = "fixed-label";
-    label.textContent = "All sections include:";
-    fixed.appendChild(label);
-    for (const ev of data.fixed) fixed.appendChild(eventRow(ev));
-    host.appendChild(fixed);
-  }
-
-  for (const pkg of data.packages) {
-    const row = document.createElement("div");
-    row.className = "pkg";
-
-    const evWrap = document.createElement("div");
-    evWrap.className = "pkg-events";
-    const list = data.fixed.length ? pkg.variant : pkg.events;
-    if (list.length === 0) {
-      const only = document.createElement("div");
-      only.className = "event-row";
-      const tag = document.createElement("span");
-      tag.className = "event-sched";
-      tag.textContent = pkg.pkgText;
-      only.appendChild(tag);
-      evWrap.appendChild(only);
-    } else {
-      for (const ev of list) evWrap.appendChild(eventRow(ev));
+  try {
+    const data = await loadPackages(course.ModuleID);
+    const options = buildOptions(course, data);
+    selection.set(course.ModuleID, { course, options, included: true });
+    renderSelection();
+    syncAddButtons();
+    saveState();
+  } catch (err) {
+    if (btn) {
+      btn.textContent = "＋ Add";
+      btn.disabled = false;
     }
-
-    const seats = document.createElement("div");
-    seats.className = "pkg-seats";
-    seats.textContent = seatText(pkg.seats);
-
-    const addBtn = document.createElement("button");
-    addBtn.type = "button";
-    addBtn.className = "add-btn";
-    const key = pkgKey(course.ModuleID, pkg.pkgId);
-    addBtn.dataset.key = key;
-    const added = schedule.has(key);
-    addBtn.textContent = added ? "✓ Added" : "＋ Add";
-    if (added) addBtn.classList.add("added");
-    addBtn.addEventListener("click", () => addPackage(course, pkg, data.fixed));
-
-    row.append(evWrap, seats, addBtn);
-    host.appendChild(row);
+    if (err instanceof SessionExpiredError) showBanner(true);
+    else setStatus(`Couldn't load ${course.CourseAbbr}: ${err.message}`);
   }
 }
 
-function renderCourses(courses) {
+function renderResults(courses) {
   els.results.replaceChildren();
   for (const course of courses) {
-    const block = document.createElement("section");
-    block.className = "course";
-
-    const headerBtn = document.createElement("button");
-    headerBtn.className = "course-header";
-    headerBtn.type = "button";
-    const caret = document.createElement("span");
-    caret.className = "caret";
-    caret.textContent = "▸";
+    const row = document.createElement("div");
+    row.className = "result-row";
     const code = document.createElement("span");
     code.className = "course-code";
     code.textContent = course.CourseAbbr ?? "";
     const title = document.createElement("span");
     title.className = "course-title";
     title.textContent = course.CourseTitle ?? "";
-    const units = document.createElement("span");
-    units.className = "course-units";
-    units.textContent = `${course.CreditsDisplay ?? ""} units`;
-    headerBtn.append(caret, code, title, units);
-
-    const detail = document.createElement("div");
-    detail.className = "course-detail";
-    detail.hidden = true;
-
-    let loaded = false;
-    headerBtn.addEventListener("click", async () => {
-      const opening = detail.hidden;
-      detail.hidden = !opening;
-      block.classList.toggle("open", opening);
-      if (!opening || loaded) return;
-      detail.textContent = "Loading sections…";
-      try {
-        const data = await loadPackages(course.ModuleID);
-        renderPackages(detail, course, data);
-        loaded = true;
-      } catch (err) {
-        if (err instanceof SessionExpiredError) {
-          detail.textContent = "";
-          showBanner(true);
-        } else if (err instanceof TssUnavailableError) {
-          detail.textContent = `TSS isn't responding (${err.message}).`;
-        } else {
-          detail.textContent = `Couldn't load sections: ${err.message}`;
-        }
-      }
-    });
-
-    block.appendChild(headerBtn);
-    block.appendChild(detail);
-    els.results.appendChild(block);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "add-btn";
+    btn.dataset.id = course.ModuleID;
+    const added = selection.has(course.ModuleID);
+    btn.textContent = added ? "✓ Added" : "＋ Add";
+    if (added) {
+      btn.classList.add("added");
+      btn.disabled = true;
+    }
+    btn.addEventListener("click", () => addCourse(course, btn));
+    row.append(code, title, btn);
+    els.results.appendChild(row);
   }
 }
 
@@ -590,20 +543,13 @@ async function runSearch() {
   els.results.replaceChildren();
   try {
     const courses = await fetchOData(
-      buildCourseUrl({
-        query: els.query.value,
-        year: els.year.value,
-        term: els.term.value,
-      }),
+      buildCourseUrl({ query: els.query.value, year: els.year.value, term: els.term.value }),
     );
-    renderCourses(courses);
-    if (courses.length === 0) {
-      setStatus("No courses found.");
-    } else if (courses.length === PAGE_SIZE) {
-      setStatus(`Showing the first ${PAGE_SIZE} — refine your search to narrow it down.`);
-    } else {
-      setStatus(`Showing ${courses.length} course${courses.length === 1 ? "" : "s"}.`);
-    }
+    renderResults(courses);
+    syncAddButtons();
+    if (courses.length === 0) setStatus("No courses found.");
+    else if (courses.length === PAGE_SIZE) setStatus(`First ${PAGE_SIZE} — refine to narrow.`);
+    else setStatus(`${courses.length} course${courses.length === 1 ? "" : "s"}.`);
   } catch (err) {
     if (err instanceof SessionExpiredError) {
       setStatus("");
@@ -611,10 +557,50 @@ async function runSearch() {
       return;
     }
     if (err instanceof TssUnavailableError) {
-      setStatus(`TSS isn't responding right now (${err.message}). Try again shortly.`);
+      setStatus(`TSS isn't responding (${err.message}).`);
       return;
     }
     setStatus(`Something went wrong: ${err.message}`);
+  }
+}
+
+function saveState() {
+  try {
+    const prefs = {
+      spread: els.spread.value,
+      b2b: els.b2b.checked,
+      start: els.start.value,
+      end: els.end.value,
+      days: els.days.filter((d) => d.checked).map((d) => d.value),
+    };
+    const sel = [...selection.values()].map((e) => ({ course: e.course, options: e.options, included: e.included }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ prefs, sel }));
+  } catch {
+    return;
+  }
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const { prefs, sel } = JSON.parse(raw);
+    if (prefs) {
+      els.spread.value = prefs.spread ?? "neutral";
+      els.b2b.checked = !!prefs.b2b;
+      els.start.value = prefs.start ?? "08:00";
+      els.end.value = prefs.end ?? "22:00";
+      const set = new Set(prefs.days ?? []);
+      els.days.forEach((d) => (d.checked = set.has(d.value)));
+    }
+    for (const e of sel ?? []) {
+      if (e && e.course && e.course.ModuleID) {
+        selection.set(e.course.ModuleID, { course: e.course, options: e.options ?? [], included: e.included !== false });
+        colorFor(e.course.CourseAbbr);
+      }
+    }
+  } catch {
+    selection.clear();
   }
 }
 
@@ -622,29 +608,27 @@ els.form.addEventListener("submit", (e) => {
   e.preventDefault();
   runSearch();
 });
-
-els.loginBtn.addEventListener("click", () => {
-  sendToBackground({ type: "openTss" }).catch(() => {});
+els.loginBtn.addEventListener("click", () => sendToBackground({ type: "openTss" }).catch(() => {}));
+els.generate.addEventListener("click", generate);
+els.prev.addEventListener("click", () => {
+  if (generated && genIndex > 0) {
+    genIndex--;
+    renderGenerated();
+  }
 });
-
-els.clearCal.addEventListener("click", () => {
-  schedule.clear();
-  commitSchedule();
+els.next.addEventListener("click", () => {
+  if (generated && genIndex < generated.count - 1) {
+    genIndex++;
+    renderGenerated();
+  }
 });
-
-els.viewList.addEventListener("click", () => setView("list"));
-els.viewCal.addEventListener("click", () => setView("cal"));
 
 function keepSessionAlive() {
   if (!sessionSeen || document.hidden) return;
-  sendToBackground({
-    type: "tssFetch",
-    url: `${SERVICE}/YUCSD_I_PERYRT_SOC?sap-client=500&$top=1`,
-  }).catch(() => {});
+  sendToBackground({ type: "tssFetch", url: `${SERVICE}/YUCSD_I_PERYRT_SOC?sap-client=500&$top=1` }).catch(() => {});
 }
-
 setInterval(keepSessionAlive, KEEPALIVE_MS);
 
-loadSchedule();
-renderSchedule();
-setView("list");
+loadState();
+renderSelection();
+renderGenerated();
