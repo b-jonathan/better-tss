@@ -56,12 +56,16 @@ function methodRank(method) {
   return { LE: 0, DI: 1, LA: 2 }[method] ?? 3;
 }
 
-function instructorsOf(entry) {
+function optionInstructors(entry) {
   const set = new Set();
-  for (const opt of entry.options || []) {
-    for (const ev of opt.meta.events) if (ev.instr) set.add(ev.instr);
-  }
+  for (const opt of entry.options || []) if (opt.meta.instructor) set.add(opt.meta.instructor);
   return [...set];
+}
+
+function entryNeedsRefresh(entry) {
+  return (entry.options || []).some(
+    (o) => o.meta.instructor === undefined || (o.meta.events || []).some((ev) => ev.abbr === undefined),
+  );
 }
 
 function classifySections(entry) {
@@ -300,6 +304,7 @@ function buildOptions(course, data) {
         pkgText: pkg.pkgText,
         seats: pkg.seats,
         courseAbbr: course.CourseAbbr,
+        instructor: (events.find((e) => e.method === "LE") || events[0] || {}).instr || "",
         events: events.map((ev) => ({ method: ev.method, abbr: ev.abbr, schedLine: ev.schedLine, instr: ev.instr, meetings: ev.meetings })),
       },
     };
@@ -476,9 +481,11 @@ function renderGenerated() {
 function generate() {
   const courses = [];
   for (const entry of selection.values()) {
-    if (entry.included && entry.options && entry.options.length) {
-      courses.push({ courseId: entry.course.ModuleID, options: entry.options });
-    }
+    if (!entry.included) continue;
+    let opts = entry.options || [];
+    const sel = entry.selectedInstructors;
+    if (sel && sel.length) opts = opts.filter((o) => sel.includes(o.meta.instructor));
+    if (opts.length) courses.push({ courseId: entry.course.ModuleID, options: opts });
   }
   if (courses.length === 0) {
     generated = null;
@@ -554,11 +561,35 @@ function renderSelection() {
     const detail = document.createElement("div");
     detail.className = "sel-detail";
     detail.hidden = true;
-    const instrs = instructorsOf(entry);
-    if (instrs.length) {
+    const instrs = optionInstructors(entry);
+    if (instrs.length > 1) {
+      const lbl = document.createElement("div");
+      lbl.className = "sec-group-label";
+      lbl.textContent = "Instructor";
+      detail.appendChild(lbl);
+      const box = document.createElement("div");
+      box.className = "instr-filter";
+      const chosen = new Set(entry.selectedInstructors && entry.selectedInstructors.length ? entry.selectedInstructors : instrs);
+      for (const name of instrs) {
+        const opt = document.createElement("label");
+        opt.className = "instr-opt";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = name;
+        cb.checked = chosen.has(name);
+        cb.addEventListener("change", () => {
+          entry.selectedInstructors = [...box.querySelectorAll("input:checked")].map((i) => i.value);
+          saveState();
+          requestGenerate();
+        });
+        opt.append(cb, document.createTextNode(` ${name}`));
+        box.appendChild(opt);
+      }
+      detail.appendChild(box);
+    } else if (instrs.length === 1) {
       const ins = document.createElement("div");
       ins.className = "sel-instr";
-      ins.textContent = `Instructors: ${instrs.join(", ")}`;
+      ins.textContent = `Instructor: ${instrs[0]}`;
       detail.appendChild(ins);
     }
     const { fixed, options } = classifySections(entry);
@@ -688,7 +719,7 @@ function saveState() {
       end: els.end.value,
       days: els.days.filter((d) => d.checked).map((d) => d.value),
     };
-    const sel = [...selection.values()].map((e) => ({ course: e.course, options: e.options, included: e.included }));
+    const sel = [...selection.values()].map((e) => ({ course: e.course, options: e.options, included: e.included, selectedInstructors: e.selectedInstructors }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ prefs, sel }));
   } catch {
     return;
@@ -710,7 +741,12 @@ function loadState() {
     }
     for (const e of sel ?? []) {
       if (e && e.course && e.course.ModuleID) {
-        selection.set(e.course.ModuleID, { course: e.course, options: e.options ?? [], included: e.included !== false });
+        selection.set(e.course.ModuleID, {
+          course: e.course,
+          options: e.options ?? [],
+          included: e.included !== false,
+          selectedInstructors: e.selectedInstructors,
+        });
         colorFor(e.course.CourseAbbr);
       }
     }
@@ -770,6 +806,26 @@ function keepSessionAlive() {
 }
 setInterval(keepSessionAlive, KEEPALIVE_MS);
 
+async function refreshStaleSelection() {
+  let changed = false;
+  for (const entry of selection.values()) {
+    if (!entryNeedsRefresh(entry)) continue;
+    try {
+      const data = await loadPackages(entry.course.ModuleID);
+      entry.options = buildOptions(entry.course, data);
+      changed = true;
+    } catch {
+      continue;
+    }
+  }
+  if (changed) {
+    renderSelection();
+    saveState();
+    requestGenerate();
+  }
+}
+
 loadState();
 renderSelection();
 requestGenerate();
+refreshStaleSelection();

@@ -117,8 +117,8 @@ body {
 .panel-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
   margin-bottom: 10px;
 }
 
@@ -129,6 +129,13 @@ body {
 .term {
   display: flex;
   gap: 6px;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.term select {
+  flex: 1;
+  min-width: 0;
 }
 
 .section-label {
@@ -325,6 +332,21 @@ input[type="time"] {
   border-radius: 4px;
   padding: 0 4px;
   white-space: nowrap;
+}
+
+.instr-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.instr-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
 }
 
 .course-dot {
