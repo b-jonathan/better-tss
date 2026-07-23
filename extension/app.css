@@ -241,19 +241,61 @@ input[type="time"] {
   gap: 6px;
 }
 
-.sel-row {
+.sel-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.sel-head {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 7px 9px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  cursor: pointer;
 }
 
-.sel-label {
+.sel-head:hover {
+  background: var(--hover);
+}
+
+.sel-code {
   flex: 1;
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 700;
+}
+
+.sel-head .caret {
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.sel-card.open .caret {
+  transform: rotate(90deg);
+}
+
+.sel-sub {
+  padding: 0 9px 7px 27px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.sel-detail {
+  padding: 6px 10px 9px 27px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sel-instr {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.sel-detail .event-row {
+  font-size: 0.78rem;
 }
 
 .course-dot {
@@ -314,6 +356,35 @@ input[type="time"] {
 .nav-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.mid-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card);
+  margin-bottom: 10px;
+}
+
+.seg {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg + .seg {
+  border-left: 1px solid var(--line);
+}
+
+.seg.active {
+  background: var(--blue);
+  color: #fff;
 }
 
 .calendar {
