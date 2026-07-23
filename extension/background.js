@@ -60,6 +60,23 @@ async function tssFetch(url) {
   return injection?.result ?? { status: 0, body: "No result from injected fetch." };
 }
 
+async function silentReauth() {
+  const existing = await chrome.tabs.query({ url: TSS_MATCH });
+  if (!existing.length) {
+    const tab = await getReadyTssTab();
+    return { ok: !!tab.url && tab.url.startsWith("https://tss.ucsd.edu/") };
+  }
+  const tab = existing[0];
+  await chrome.tabs.reload(tab.id);
+  try {
+    await waitForTabComplete(tab.id);
+  } catch {
+    return { ok: false };
+  }
+  const refreshed = await chrome.tabs.get(tab.id);
+  return { ok: !!refreshed.url && refreshed.url.startsWith("https://tss.ucsd.edu/") };
+}
+
 async function openTss() {
   const existing = await chrome.tabs.query({ url: TSS_MATCH });
   if (existing.length) {
@@ -75,6 +92,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     tssFetch(msg.url)
       .then(sendResponse)
       .catch((e) => sendResponse({ status: 0, body: String((e && e.message) || e) }));
+    return true;
+  }
+  if (msg?.type === "silentReauth") {
+    silentReauth()
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
   if (msg?.type === "openTss") {
