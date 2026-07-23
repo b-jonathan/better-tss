@@ -511,18 +511,9 @@ input[type="time"] {
   cursor: pointer;
 }
 
-.generate-btn {
-  width: 100%;
-  padding: 11px;
-  border: none;
-  border-radius: 9px;
-  background: var(--blue);
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.95rem;
-  cursor: pointer;
-}
-
-.generate-btn:hover {
-  background: #00507e;
+.pref-hint {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
 }
