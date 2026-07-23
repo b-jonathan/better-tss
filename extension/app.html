@@ -21,58 +21,94 @@
       Runs entirely in your browser on your own TSS session.
     </div>
 
-    <main class="wrap">
-      <div class="page-head">
-        <h1 class="page-title">Schedule Planner</h1>
-        <div class="term">
-          <select id="year">
-            <option value="2026/2027" selected>2026/2027</option>
-            <option value="2025/2026">2025/2026</option>
-          </select>
-          <select id="term">
-            <option value="Fall Quarter" selected>Fall Quarter</option>
-            <option value="Winter Quarter">Winter Quarter</option>
-            <option value="Spring Quarter">Spring Quarter</option>
-            <option value="Summer Session I">Summer Session I</option>
-            <option value="Summer Session II">Summer Session II</option>
-          </select>
-        </div>
-      </div>
+    <section id="login-banner" class="login-banner" hidden>
+      <span>Your TSS session isn't active. Log in, then come back and search.</span>
+      <button id="login-btn" type="button">Log in to TSS</button>
+    </section>
 
-      <section id="login-banner" class="login-banner" hidden>
-        <span>Your TSS session isn't active. Log in, then come back and search.</span>
-        <button id="login-btn" type="button">Log in to TSS</button>
+    <main class="panels">
+      <section class="panel panel-left">
+        <div class="panel-head">
+          <h2>Classes</h2>
+          <div class="term">
+            <select id="year">
+              <option value="2026/2027" selected>2026/2027</option>
+              <option value="2025/2026">2025/2026</option>
+            </select>
+            <select id="term">
+              <option value="Fall Quarter" selected>Fall Quarter</option>
+              <option value="Winter Quarter">Winter Quarter</option>
+              <option value="Spring Quarter">Spring Quarter</option>
+              <option value="Summer Session I">Summer Session I</option>
+              <option value="Summer Session II">Summer Session II</option>
+            </select>
+          </div>
+        </div>
+
+        <form id="search-form" class="searchbar">
+          <input id="query" type="text" placeholder="Search — e.g. CSE, CSE 30" autocomplete="off" autofocus />
+          <button type="submit">Search</button>
+        </form>
+        <p id="status" class="status"></p>
+        <div id="results" class="results"></div>
+
+        <h3 class="section-label">Selected courses</h3>
+        <div id="selection" class="selection"></div>
       </section>
 
-      <form id="search-form" class="searchbar">
-        <input
-          id="query"
-          type="text"
-          placeholder="Search classes — e.g. CSE, CSE 30"
-          autocomplete="off"
-          autofocus
-        />
-        <button type="submit">Search</button>
-      </form>
-
-      <p id="status" class="status"></p>
-      <div id="results" class="results"></div>
-
-      <div class="schedule-head">
-        <h2>Your schedule</h2>
-        <div class="view-toggle" role="group" aria-label="Schedule view">
-          <button id="view-list" class="seg active" type="button">List</button>
-          <button id="view-cal" class="seg" type="button">Calendar</button>
+      <section class="panel panel-mid">
+        <div class="gen-bar">
+          <button id="prev" class="nav-btn" type="button" disabled>‹</button>
+          <span id="gen-label" class="gen-label">No schedules yet — pick classes and Generate.</span>
+          <button id="next" class="nav-btn" type="button" disabled>›</button>
         </div>
-        <button id="clear-cal" class="ghost-btn" type="button">Clear</button>
-      </div>
-      <div id="schedule-list" class="schedule-list"></div>
-      <div id="cal-wrap" hidden>
         <div id="calendar" class="calendar"></div>
         <p id="cal-note" class="cal-note"></p>
-      </div>
+        <div id="gen-summary" class="gen-summary"></div>
+      </section>
+
+      <section class="panel panel-right">
+        <h2>Preferences</h2>
+
+        <label class="pref-row">
+          <span>Compactness</span>
+          <select id="pref-spread">
+            <option value="extremely-compact">Extremely compact</option>
+            <option value="compact">Compact</option>
+            <option value="neutral" selected>Neutral</option>
+            <option value="slightly-spread-out">Slightly spread out</option>
+            <option value="really-spread-out">Really spread out</option>
+          </select>
+        </label>
+
+        <label class="pref-check">
+          <input id="pref-b2b" type="checkbox" />
+          <span>Avoid back-to-back classes</span>
+        </label>
+
+        <div class="pref-row">
+          <span>Preferred time</span>
+          <div class="time-range">
+            <input id="pref-start" type="time" value="08:00" />
+            <span>to</span>
+            <input id="pref-end" type="time" value="22:00" />
+          </div>
+        </div>
+
+        <fieldset class="pref-days">
+          <legend>Preferred days</legend>
+          <label><input type="checkbox" value="0" /> Mon</label>
+          <label><input type="checkbox" value="1" /> Tue</label>
+          <label><input type="checkbox" value="2" /> Wed</label>
+          <label><input type="checkbox" value="3" /> Thu</label>
+          <label><input type="checkbox" value="4" /> Fri</label>
+        </fieldset>
+
+        <button id="generate" class="generate-btn" type="button">Generate schedules</button>
+      </section>
     </main>
 
+    <script src="scheduler.js"></script>
     <script src="hot-reload.js"></script>
     <script src="app.js"></script>
   </body>
