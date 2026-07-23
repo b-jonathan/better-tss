@@ -10,7 +10,9 @@ Working prototype (verified against live TSS data). A Manifest V3 extension with
 **3-panel auto-scheduler**: **left** = search + selected courses — each expandable to
 show title, units, instructors, and its sections — split into **"in every section"**
 (the fixed lecture/discussion) vs. the selectable **options**, each with its section
-code (e.g. `001-001-LA`); adding a course clears the search. **middle** = the generated schedule with prev/next browsing, a match score,
+code (e.g. `001-001-LA`); adding a course clears the search. Courses with more than one
+lecture instructor get **per-course instructor checkboxes** that constrain which the
+generator may pick. **middle** = the generated schedule with prev/next browsing, a match score,
 and a **Calendar / List** view toggle; **right** = preferences.
 
 Pick courses and set preferences — schedules **regenerate automatically** (300 ms
