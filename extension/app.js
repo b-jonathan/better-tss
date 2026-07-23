@@ -24,6 +24,7 @@ const schedule = new Map();
 const courseColor = new Map();
 
 const KEEPALIVE_MS = 5 * 60 * 1000;
+const STORAGE_KEY = "better-tss.schedule";
 let sessionSeen = false;
 
 function colorFor(code) {
@@ -400,8 +401,7 @@ function renderScheduleList() {
     rm.textContent = "Remove";
     rm.addEventListener("click", () => {
       schedule.delete(entry.key);
-      renderSchedule();
-      syncAddButtons();
+      commitSchedule();
     });
     head.append(title, units, rm);
     card.appendChild(head);
@@ -414,6 +414,35 @@ function renderScheduleList() {
 function renderSchedule() {
   renderScheduleList();
   renderCalendar();
+}
+
+function saveSchedule() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...schedule.values()]));
+  } catch {
+    return;
+  }
+}
+
+function loadSchedule() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    for (const entry of JSON.parse(raw)) {
+      if (!entry || !entry.key) continue;
+      schedule.set(entry.key, entry);
+      const code = entry.course?.CourseAbbr ?? entry.key;
+      if (entry.color) courseColor.set(code, entry.color);
+    }
+  } catch {
+    schedule.clear();
+  }
+}
+
+function commitSchedule() {
+  saveSchedule();
+  renderSchedule();
+  syncAddButtons();
 }
 
 function syncAddButtons() {
@@ -440,8 +469,7 @@ function addPackage(course, pkg, fixed) {
       color: colorFor(course.CourseAbbr ?? key),
     });
   }
-  renderSchedule();
-  syncAddButtons();
+  commitSchedule();
 }
 
 function renderPackages(host, course, data) {
@@ -601,8 +629,7 @@ els.loginBtn.addEventListener("click", () => {
 
 els.clearCal.addEventListener("click", () => {
   schedule.clear();
-  renderSchedule();
-  syncAddButtons();
+  commitSchedule();
 });
 
 els.viewList.addEventListener("click", () => setView("list"));
@@ -618,5 +645,6 @@ function keepSessionAlive() {
 
 setInterval(keepSessionAlive, KEEPALIVE_MS);
 
+loadSchedule();
 renderSchedule();
 setView("list");
