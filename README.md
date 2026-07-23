@@ -39,6 +39,19 @@ highlighting. Reads only.
 
 If the session has expired, the page shows a **Log in to TSS** button instead of results; log in, return, and search again.
 
+## Hot reload (dev)
+
+`hot-reload.js` (loaded by `app.html`) polls the extension's own files once a second
+and auto-reloads on change — no external tooling, and it runs in your normal Chrome so
+your TSS login is preserved:
+
+- Edit `app.html` / `app.js` / `app.css` → the planner tab **reloads itself** instantly.
+- Edit `background.js` / `manifest.json` → it calls `chrome.runtime.reload()` (full
+  extension reload); refresh the planner tab once afterward since its context is replaced.
+
+The in-memory schedule resets on reload (no persistence yet). To ship a packed build,
+drop the `<script src="hot-reload.js">` tag from `app.html`.
+
 ## How auth works (v0.2)
 
 The extension page does **not** fetch TSS directly — a cross-origin fetch wouldn't
