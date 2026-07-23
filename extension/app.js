@@ -52,6 +52,32 @@ function methodBadge(method) {
   return b;
 }
 
+function methodRank(method) {
+  return { LE: 0, DI: 1, LA: 2 }[method] ?? 3;
+}
+
+function instructorsOf(entry) {
+  const set = new Set();
+  for (const opt of entry.options || []) {
+    for (const ev of opt.meta.events) if (ev.instr) set.add(ev.instr);
+  }
+  return [...set];
+}
+
+function sectionsOf(entry) {
+  const seen = new Set();
+  const out = [];
+  for (const opt of entry.options || []) {
+    for (const ev of opt.meta.events) {
+      const key = `${ev.method}|${ev.schedLine}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(ev);
+    }
+  }
+  return out.sort((a, b) => methodRank(a.method) - methodRank(b.method));
+}
+
 function buildCourseUrl({ query, year, term }) {
   const filter = `AcYearText eq '${year}' and AcademicPeriodText eq '${term}'`;
   const params = [
@@ -268,6 +294,10 @@ const els = {
   genSummary: document.getElementById("gen-summary"),
   prev: document.getElementById("prev"),
   next: document.getElementById("next"),
+  viewCal: document.getElementById("view-cal"),
+  viewList: document.getElementById("view-list"),
+  calView: document.getElementById("cal-view"),
+  listView: document.getElementById("list-view"),
   spread: document.getElementById("pref-spread"),
   b2b: document.getElementById("pref-b2b"),
   start: document.getElementById("pref-start"),
@@ -454,36 +484,82 @@ function renderSelection() {
     return;
   }
   for (const entry of selection.values()) {
-    const row = document.createElement("div");
-    row.className = "sel-row";
+    const card = document.createElement("div");
+    card.className = "sel-card";
+
+    const head = document.createElement("div");
+    head.className = "sel-head";
+
     const inc = document.createElement("input");
     inc.type = "checkbox";
     inc.checked = entry.included;
+    inc.addEventListener("click", (e) => e.stopPropagation());
     inc.addEventListener("change", () => {
       entry.included = inc.checked;
       saveState();
       requestGenerate();
     });
-    const label = document.createElement("span");
-    label.className = "sel-label";
-    const count = entry.options ? entry.options.length : 0;
-    label.textContent = `${entry.course.CourseAbbr} · ${count} option${count === 1 ? "" : "s"}`;
+
     const dot = document.createElement("span");
     dot.className = "course-dot";
     dot.style.background = colorFor(entry.course.CourseAbbr);
+
+    const code = document.createElement("span");
+    code.className = "sel-code";
+    code.textContent = entry.course.CourseAbbr;
+
+    const caret = document.createElement("span");
+    caret.className = "caret";
+    caret.textContent = "▸";
+
     const rm = document.createElement("button");
     rm.type = "button";
     rm.className = "rm-btn";
     rm.textContent = "✕";
-    rm.addEventListener("click", () => {
+    rm.addEventListener("click", (e) => {
+      e.stopPropagation();
       selection.delete(entry.course.ModuleID);
       renderSelection();
       syncAddButtons();
       saveState();
       requestGenerate();
     });
-    row.append(inc, dot, label, rm);
-    els.selection.appendChild(row);
+
+    head.append(inc, dot, code, caret, rm);
+
+    const sub = document.createElement("div");
+    sub.className = "sel-sub";
+    const count = entry.options ? entry.options.length : 0;
+    sub.textContent = `${entry.course.CourseTitle ?? ""} · ${entry.course.CreditsDisplay ?? "?"} units · ${count} option${count === 1 ? "" : "s"}`;
+
+    const detail = document.createElement("div");
+    detail.className = "sel-detail";
+    detail.hidden = true;
+    const instrs = instructorsOf(entry);
+    if (instrs.length) {
+      const ins = document.createElement("div");
+      ins.className = "sel-instr";
+      ins.textContent = `Instructors: ${instrs.join(", ")}`;
+      detail.appendChild(ins);
+    }
+    for (const ev of sectionsOf(entry)) {
+      const row = document.createElement("div");
+      row.className = "event-row";
+      row.appendChild(methodBadge(ev.method));
+      const s = document.createElement("span");
+      s.className = "event-sched";
+      s.textContent = ev.schedLine || "TBA";
+      row.appendChild(s);
+      detail.appendChild(row);
+    }
+
+    head.addEventListener("click", () => {
+      detail.hidden = !detail.hidden;
+      card.classList.toggle("open", !detail.hidden);
+    });
+
+    card.append(head, sub, detail);
+    els.selection.appendChild(card);
   }
 }
 
@@ -507,7 +583,9 @@ async function addCourse(course, btn) {
     const options = buildOptions(course, data);
     selection.set(course.ModuleID, { course, options, included: true });
     renderSelection();
-    syncAddButtons();
+    els.results.replaceChildren();
+    els.query.value = "";
+    setStatus("");
     saveState();
     requestGenerate();
   } catch (err) {
@@ -631,6 +709,15 @@ els.next.addEventListener("click", () => {
     renderGenerated();
   }
 });
+
+function setMidView(name) {
+  els.viewCal.classList.toggle("active", name === "cal");
+  els.viewList.classList.toggle("active", name === "list");
+  els.calView.hidden = name !== "cal";
+  els.listView.hidden = name !== "list";
+}
+els.viewCal.addEventListener("click", () => setMidView("cal"));
+els.viewList.addEventListener("click", () => setMidView("list"));
 
 const debouncedGenerate = debounce(generate, 300);
 

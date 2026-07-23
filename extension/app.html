@@ -59,12 +59,20 @@
       <section class="panel panel-mid">
         <div class="gen-bar">
           <button id="prev" class="nav-btn" type="button" disabled>‹</button>
-          <span id="gen-label" class="gen-label">No schedules yet — pick classes and Generate.</span>
+          <span id="gen-label" class="gen-label">Add classes and set preferences to see schedules.</span>
           <button id="next" class="nav-btn" type="button" disabled>›</button>
         </div>
-        <div id="calendar" class="calendar"></div>
-        <p id="cal-note" class="cal-note"></p>
-        <div id="gen-summary" class="gen-summary"></div>
+        <div class="mid-toggle">
+          <button id="view-cal" class="seg active" type="button">Calendar</button>
+          <button id="view-list" class="seg" type="button">List</button>
+        </div>
+        <div id="cal-view">
+          <div id="calendar" class="calendar"></div>
+          <p id="cal-note" class="cal-note"></p>
+        </div>
+        <div id="list-view" hidden>
+          <div id="gen-summary" class="gen-summary"></div>
+        </div>
       </section>
 
       <section class="panel panel-right">
